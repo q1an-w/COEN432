@@ -31,25 +31,42 @@ def initialize_population(tiles):
         population.append(grid_arrangement)
     return population
 
-# Fitness function to evaluate the candidate solutions
-
 
 def fitness(puzzle):
     score = 0
+    edge_weight = 2.0  # Weight for matches
+    mismatch_penalty = -1.0  # Penalty for mismatches
+    contiguous_bonus = 1.0  # Bonus for both edges matching
+
     for i in range(8):
         for j in range(8):
             current_tile = puzzle[i, j]
-            # Check right edge (current_tile[1] vs next tile's left edge)
+            match_count = 0
+
+            # Check right edge (current_tile[1] vs right_tile[3])
             if j < 7:
                 right_tile = puzzle[i, j + 1]
                 if current_tile[1] == right_tile[3]:
-                    score += 1
-            # Check bottom edge (current_tile[2] vs tile below's top edge)
+                    score += edge_weight  # Increment score for match
+                    match_count += 1
+                else:
+                    score += mismatch_penalty  # Decrement score for mismatch
+
+            # Check bottom edge (current_tile[2] vs bottom_tile[0])
             if i < 7:
                 bottom_tile = puzzle[i + 1, j]
                 if current_tile[2] == bottom_tile[0]:
-                    score += 1
+                    score += edge_weight  # Increment score for match
+                    match_count += 1
+                else:
+                    score += mismatch_penalty  # Decrement score for mismatch
+
+            # Reward for both edges matching
+            if match_count == 2:
+                score += contiguous_bonus  # Increment score for contiguous matches
+
     return score
+
 
 # Select the best candidates based on fitness
 
