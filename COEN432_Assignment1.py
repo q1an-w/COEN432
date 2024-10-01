@@ -1,16 +1,10 @@
 import random
 import numpy as np
-#
-#
-# official functioning version, the general structure goes
-# main -> run_genetic_algorithm -> initialize population -> run x generations -> write output to file
-# formats for input and output are hardcoded, use the java to test how good the output was, already coded for you
-# need to add console input for pop size and gen size, for now its hardcoded
-#
+
 # Constants
 POPULATION_SIZE = 1000
-GENERATIONS = 1000
-MUTATION_RATE = 0.1
+GENERATIONS = 100
+MUTATION_RATE = 0.8
 
 # Read the input file and parse the tiles
 
@@ -20,11 +14,9 @@ def read_input(file_path):
         tiles = []
         for line in file:
             row = line.split()  # Split the line into 4-digit strings
-            # Split each 4-digit number into its digits
             tile_edges = [[int(digit) for digit in str(tile)] for tile in row]
             tiles.extend(tile_edges)  # Add the split tiles to the list
-    # Convert to numpy array and reshape to (64, 4)
-    return np.array(tiles)
+    return np.array(tiles)  # Convert to numpy array and reshape to (64, 4)
 
 # Initialize the population with unique arrangements of tiles
 
@@ -47,13 +39,11 @@ def fitness(puzzle):
     for i in range(8):
         for j in range(8):
             current_tile = puzzle[i, j]
-
             # Check right edge (current_tile[1] vs next tile's left edge)
             if j < 7:
                 right_tile = puzzle[i, j + 1]
                 if current_tile[1] == right_tile[3]:
                     score += 1
-
             # Check bottom edge (current_tile[2] vs tile below's top edge)
             if i < 7:
                 bottom_tile = puzzle[i + 1, j]
@@ -70,24 +60,51 @@ def selection(population):
         zip(scores, population), key=lambda pair: pair[0], reverse=True)]
     return sorted_population[:POPULATION_SIZE // 2]  # Select top 50%
 
-# Crossover between two parents to create offspring
+# Destructive two-point crossover
 
 
-def crossover(parent1, parent2):
-    crossover_point = random.randint(1, 7)
-    child1 = np.vstack((parent1[:crossover_point], parent2[crossover_point:]))
-    child2 = np.vstack((parent2[:crossover_point], parent1[crossover_point:]))
+def two_point_crossover(parent1, parent2):
+    crossover_point1 = random.randint(1, 6)
+    crossover_point2 = random.randint(crossover_point1 + 1, 7)
+    child1 = np.vstack(
+        (parent1[:crossover_point1], parent2[crossover_point1:crossover_point2], parent1[crossover_point2:]))
+    child2 = np.vstack(
+        (parent2[:crossover_point1], parent1[crossover_point1:crossover_point2], parent2[crossover_point2:]))
+    return child1, child2
+
+# Uniform crossover
+
+
+def uniform_crossover(parent1, parent2):
+    child1 = np.empty_like(parent1)
+    child2 = np.empty_like(parent2)
+    for i in range(8):
+        for j in range(8):
+            if random.random() > 0.5:
+                child1[i, j] = parent1[i, j]
+                child2[i, j] = parent2[i, j]
+            else:
+                child1[i, j] = parent2[i, j]
+                child2[i, j] = parent1[i, j]
     return child1, child2
 
 # Mutate a candidate solution
 
 
-def mutate(puzzle):
-    if random.random() < MUTATION_RATE:
-        i1, j1 = random.randint(0, 7), random.randint(0, 7)
-        i2, j2 = random.randint(0, 7), random.randint(0, 7)
-        # Swap two tiles
-        puzzle[i1, j1], puzzle[i2, j2] = puzzle[i2, j2], puzzle[i1, j1]
+def mutate(puzzle, generation, fitness_score):
+    # Adaptive mutation rate
+    mutation_rate = MUTATION_RATE if generation < 0.75 * \
+        GENERATIONS else MUTATION_RATE * (1 - fitness_score)
+
+    if random.random() < mutation_rate:
+        # Higher mutation rates for first 75% of generations
+        # More swaps in early generations
+        swaps = 2 if generation < 0.75 * GENERATIONS else 1
+        for _ in range(swaps):
+            i1, j1 = random.randint(0, 7), random.randint(0, 7)
+            i2, j2 = random.randint(0, 7), random.randint(0, 7)
+            # Swap two tiles
+            puzzle[i1, j1], puzzle[i2, j2] = puzzle[i2, j2], puzzle[i1, j1]
     return puzzle
 
 # Run the genetic algorithm
@@ -99,15 +116,26 @@ def run_genetic_algorithm(tiles):
     best_score = -1
 
     for generation in range(GENERATIONS):
-        # Evaluate fitness
+        # Selection
         population = selection(population)
 
-        # Crossover to create new population
+        # Crossover phase based on the generation
         new_population = []
         while len(new_population) < POPULATION_SIZE:
             parent1, parent2 = random.sample(population, 2)
-            child1, child2 = crossover(parent1, parent2)
-            new_population.extend([mutate(child1), mutate(child2)])
+
+            if generation < 0.75 * GENERATIONS:
+                # First 75%: Use destructive two-point crossover
+                child1, child2 = two_point_crossover(parent1, parent2)
+            else:
+                # Last 25%: Use uniform crossover
+                child1, child2 = uniform_crossover(parent1, parent2)
+
+            # Mutate the children
+            child1 = mutate(child1, generation, fitness(child1))
+            child2 = mutate(child2, generation, fitness(child2))
+
+            new_population.extend([child1, child2])
 
         # Limit to population size
         population = new_population[:POPULATION_SIZE]
