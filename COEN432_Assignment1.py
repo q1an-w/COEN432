@@ -1,6 +1,12 @@
 import random
 import numpy as np
-
+#
+#
+# official functioning version, the general structure goes
+# main -> run_genetic_algorithm -> initialize population -> run x generations -> write output to file
+# formats for input and output are hardcoded, use the java to test how good the output was, already coded for you
+# need to add console input for pop size and gen size, for now its hardcoded
+#
 # Constants
 POPULATION_SIZE = 1000
 GENERATIONS = 1000
