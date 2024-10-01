@@ -1,116 +1,144 @@
 import random
-from deap import base, creator, tools, algorithms
-import argparse
+import numpy as np
 
-# Define fitness function (minimizing mismatches between adjacent pieces)
+# Constants
+POPULATION_SIZE = 1000
+GENERATIONS = 1000
+MUTATION_RATE = 0.1
 
-
-def calculate_fitness(individual):
-    mismatches = 0
-    # Convert individual to 8x8 grid
-    puzzle = [individual[i*8:(i+1)*8] for i in range(8)]
-
-    for row in range(8):
-        for col in range(8):
-            piece = puzzle[row][col]
-
-            # Check right neighbor
-            if col < 7:
-                right_neighbor = puzzle[row][col+1]
-                if piece[1] != right_neighbor[3]:  # Right edge != Left edge of neighbor
-                    mismatches += 1
-
-            # Check bottom neighbor
-            if row < 7:
-                bottom_neighbor = puzzle[row+1][col]
-                if piece[2] != bottom_neighbor[0]:  # Bottom edge != Top edge of neighbor
-                    mismatches += 1
-
-    return mismatches,
-
-# Function to create random puzzle pieces (4 edges with 7 possible motifs)
+# Read the input file and parse the tiles
 
 
-def create_individual():
-    pieces = [tuple(random.choices(range(7), k=4)) for _ in range(64)]
-    # Shuffle the pieces to create a new puzzle configuration
-    random.shuffle(pieces)
-    return pieces
+def read_input(file_path):
+    with open(file_path, 'r') as file:
+        tiles = []
+        for line in file:
+            row = line.split()  # Split the line into 4-digit strings
+            # Split each 4-digit number into its digits
+            tile_edges = [[int(digit) for digit in str(tile)] for tile in row]
+            tiles.extend(tile_edges)  # Add the split tiles to the list
+    # Convert to numpy array and reshape to (64, 4)
+    return np.array(tiles)
+
+# Initialize the population with unique arrangements of tiles
 
 
-def rotate_piece(piece):
-    # Randomly rotate piece by 90, 180, or 270 degrees
-    rotations = random.randint(1, 3)
-    return piece[-rotations:] + piece[:-rotations]
+def initialize_population(tiles):
+    population = []
+    for _ in range(POPULATION_SIZE):
+        arrangement = tiles.copy()  # Copy the tiles to shuffle without affecting the original
+        np.random.shuffle(arrangement)  # Shuffle the tiles
+        grid_arrangement = arrangement.reshape(
+            8, 8, 4)  # Reshape into 8x8 grid of tiles
+        population.append(grid_arrangement)
+    return population
+
+# Fitness function to evaluate the candidate solutions
 
 
-def mutate_individual(individual, indpb):
-    for i in range(len(individual)):
-        if random.random() < indpb:
-            individual[i] = rotate_piece(individual[i])
-    return individual,
+def fitness(puzzle):
+    score = 0
+    for i in range(8):
+        for j in range(8):
+            current_tile = puzzle[i, j]
+
+            # Check right edge (current_tile[1] vs next tile's left edge)
+            if j < 7:
+                right_tile = puzzle[i, j + 1]
+                if current_tile[1] == right_tile[3]:
+                    score += 1
+
+            # Check bottom edge (current_tile[2] vs tile below's top edge)
+            if i < 7:
+                bottom_tile = puzzle[i + 1, j]
+                if current_tile[2] == bottom_tile[0]:
+                    score += 1
+    return score
+
+# Select the best candidates based on fitness
 
 
-# Register GA tools and components using DEAP
-# Minimize the number of mismatches
-creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
-creator.create("Individual", list, fitness=creator.FitnessMin)
+def selection(population):
+    scores = [fitness(puzzle) for puzzle in population]
+    sorted_population = [x for _, x in sorted(
+        zip(scores, population), key=lambda pair: pair[0], reverse=True)]
+    return sorted_population[:POPULATION_SIZE // 2]  # Select top 50%
 
-toolbox = base.Toolbox()
-toolbox.register("individual", tools.initIterate,
-                 creator.Individual, create_individual)
-toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-toolbox.register("mate", tools.cxUniform, indpb=0.3)  # Uniform crossover
-toolbox.register("mutate", mutate_individual,
-                 indpb=0.1)  # Mutation with shuffle
-toolbox.register("select", tools.selTournament,
-                 tournsize=3)  # Tournament selection
-toolbox.register("evaluate", calculate_fitness)
-
-# Main Genetic Algorithm function
+# Crossover between two parents to create offspring
 
 
-def run_ga(pop_size, num_generations):
-    population = toolbox.population(n=pop_size)
-    hall_of_fame = tools.HallOfFame(1)
-    stats = tools.Statistics(lambda ind: ind.fitness.values)
-    stats.register("min", min)
-    stats.register("avg", lambda ind: sum(fit[0] for fit in ind) / len(ind))
+def crossover(parent1, parent2):
+    crossover_point = random.randint(1, 7)
+    child1 = np.vstack((parent1[:crossover_point], parent2[crossover_point:]))
+    child2 = np.vstack((parent2[:crossover_point], parent1[crossover_point:]))
+    return child1, child2
 
-    population, logbook = algorithms.eaSimple(population, toolbox, cxpb=0.7, mutpb=0.2, ngen=num_generations,
-                                              stats=stats, halloffame=hall_of_fame, verbose=True)
-
-    return hall_of_fame[0]  # Return the best individual (solution)
-
-# Function to save the best solution to an output file
+# Mutate a candidate solution
 
 
-def save_solution(best_solution, team_info):
-    with open("Ass1Output.txt", "w") as f:
-        # Write the first line with team information
-        f.write(f"{team_info}\n")
+def mutate(puzzle):
+    if random.random() < MUTATION_RATE:
+        i1, j1 = random.randint(0, 7), random.randint(0, 7)
+        i2, j2 = random.randint(0, 7), random.randint(0, 7)
+        # Swap two tiles
+        puzzle[i1, j1], puzzle[i2, j2] = puzzle[i2, j2], puzzle[i1, j1]
+    return puzzle
 
-        # Write the 8x8 solution in the required format
-        for i in range(8):
-            line = " ".join(
-                "".join(map(str, best_solution[i*8 + j])) for j in range(8))
-            f.write(line + "\n")
+# Run the genetic algorithm
 
 
-# Command-line UI for population size and generation input
+def run_genetic_algorithm(tiles):
+    population = initialize_population(tiles)
+    best_solution = None
+    best_score = -1
+
+    for generation in range(GENERATIONS):
+        # Evaluate fitness
+        population = selection(population)
+
+        # Crossover to create new population
+        new_population = []
+        while len(new_population) < POPULATION_SIZE:
+            parent1, parent2 = random.sample(population, 2)
+            child1, child2 = crossover(parent1, parent2)
+            new_population.extend([mutate(child1), mutate(child2)])
+
+        # Limit to population size
+        population = new_population[:POPULATION_SIZE]
+
+        # Check for the best solution
+        for puzzle in population:
+            score = fitness(puzzle)
+            if score > best_score:
+                best_score = score
+                best_solution = puzzle
+
+        # Log the best fitness score for the current generation
+        print(
+            f"Generation {generation + 1}/{GENERATIONS}: Best Fitness (score) = {best_score}")
+
+    return best_solution
+
+
+# Write the output to a file
+team_info = "TeamName TeamID1 TeamID2"
+
+
+def write_output(file_path, solution):
+    with open(file_path, 'w') as file:
+        file.write(f"{team_info}\n")
+        for row in solution:
+            line = ' '.join([''.join(map(str, tile)) for tile in row])
+            file.write(line + '\n')
+
+
+# Main execution
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Edge-Matching Puzzle Solver")
-    parser.add_argument("--pop_size", type=int, default=1000,
-                        help="Population size (100-1000)")
-    parser.add_argument("--num_generations", type=int,
-                        default=50, help="Number of generations (1-100)")
-    parser.add_argument("--team_info", type=str,
-                        default="TeamName TeamID1 TeamID2", help="Team names and IDs")
-    args = parser.parse_args()
+    input_file = "Ass1Input.txt"
+    output_file = "Ass1Output.txt"
 
-    # Run the GA with user-defined parameters
-    best_solution = run_ga(pop_size=args.pop_size,
-                           num_generations=args.num_generations)
+    tiles = read_input(input_file)
+    best_solution = run_genetic_algorithm(tiles)
+    write_output(output_file, best_solution)
 
-    # Save the best solution to the output file
-    save_solution(best_solution, args.team_info)
+    print("Output written to", output_file)
