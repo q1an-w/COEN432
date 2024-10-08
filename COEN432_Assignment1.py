@@ -1,22 +1,36 @@
 import random
 import numpy as np
+import pandas as pd
+import time  # Import the time module
+from datetime import datetime  # For logging timestamps
+from deap import tools, base, creator
 
 # Constants
 POPULATION_SIZE = 1000
-GENERATIONS = 100
+GENERATIONS = 500
 MUTATION_RATE = 0.8
 
-# Read the input file and parse the tiles
+# DEAP setup
+creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+creator.create("Individual", np.ndarray, fitness=creator.FitnessMax)
+
+# Optimized input file reader using pandas
 
 
 def read_input(file_path):
-    with open(file_path, 'r') as file:
-        tiles = []
-        for line in file:
-            row = line.split()  # Split the line into 4-digit strings
-            tile_edges = [[int(digit) for digit in str(tile)] for tile in row]
-            tiles.extend(tile_edges)  # Add the split tiles to the list
-    return np.array(tiles)  # Convert to numpy array and reshape to (64, 4)
+    # Read the file into a pandas DataFrame
+    df = pd.read_csv(file_path, sep='\s+', header=None)
+
+    # Ensure each tile's digits are split and form a consistent (64, 4) shape
+    tiles = []
+    for row in df.values:
+        for tile in row:
+            # Pad the tile to ensure 4 digits
+            tile_digits = [int(digit) for digit in f"{tile:04d}"]
+            tiles.append(tile_digits)
+
+    # Convert to NumPy array with shape (64, 4)
+    return np.array(tiles).reshape(64, 4)
 
 # Initialize the population with unique arrangements of tiles
 
@@ -24,12 +38,12 @@ def read_input(file_path):
 def initialize_population(tiles):
     population = []
     for _ in range(POPULATION_SIZE):
-        arrangement = tiles.copy()  # Copy the tiles to shuffle without affecting the original
-        np.random.shuffle(arrangement)  # Shuffle the tiles
-        grid_arrangement = arrangement.reshape(
-            8, 8, 4)  # Reshape into 8x8 grid of tiles
-        population.append(grid_arrangement)
+        arrangement = np.random.permutation(tiles)  # Faster random shuffle
+        grid_arrangement = arrangement.reshape(8, 8, 4)
+        population.append(creator.Individual(grid_arrangement))
     return population
+
+# Optimized fitness function using vectorized operations
 
 
 def fitness(puzzle):
@@ -38,46 +52,34 @@ def fitness(puzzle):
     mismatch_penalty = -1.0  # Penalty for mismatches
     contiguous_bonus = 1.0  # Bonus for both edges matching
 
-    for i in range(8):
-        for j in range(8):
-            current_tile = puzzle[i, j]
-            match_count = 0
+    # Compute right edge matches
+    right_edges = puzzle[:, :-1, 1] == puzzle[:, 1:, 3]
+    right_matches = np.sum(right_edges) * edge_weight
+    right_mismatches = np.sum(~right_edges) * mismatch_penalty
 
-            # Check right edge (current_tile[1] vs right_tile[3])
-            if j < 7:
-                right_tile = puzzle[i, j + 1]
-                if current_tile[1] == right_tile[3]:
-                    score += edge_weight  # Increment score for match
-                    match_count += 1
-                else:
-                    score += mismatch_penalty  # Decrement score for mismatch
+    # Compute bottom edge matches
+    bottom_edges = puzzle[:-1, :, 2] == puzzle[1:, :, 0]
+    bottom_matches = np.sum(bottom_edges) * edge_weight
+    bottom_mismatches = np.sum(~bottom_edges) * mismatch_penalty
 
-            # Check bottom edge (current_tile[2] vs bottom_tile[0])
-            if i < 7:
-                bottom_tile = puzzle[i + 1, j]
-                if current_tile[2] == bottom_tile[0]:
-                    score += edge_weight  # Increment score for match
-                    match_count += 1
-                else:
-                    score += mismatch_penalty  # Decrement score for mismatch
+    # Contiguous bonuses where both right and bottom match
+    contiguous_matches = np.sum(
+        right_edges[:-1, :] & bottom_edges[:, :-1]) * contiguous_bonus
 
-            # Reward for both edges matching
-            if match_count == 2:
-                score += contiguous_bonus  # Increment score for contiguous matches
-
+    score += right_matches + right_mismatches + \
+        bottom_matches + bottom_mismatches + contiguous_matches
     return score
 
-
-# Select the best candidates based on fitness
+# Select the best candidates using efficient numpy operations
 
 
 def selection(population):
-    scores = [fitness(puzzle) for puzzle in population]
-    sorted_population = [x for _, x in sorted(
-        zip(scores, population), key=lambda pair: pair[0], reverse=True)]
-    return sorted_population[:POPULATION_SIZE // 2]  # Select top 50%
+    fitness_scores = np.array([fitness(puzzle) for puzzle in population])
+    best_indices = np.argsort(
+        fitness_scores)[-POPULATION_SIZE // 2:]  # Select top 50%
+    return [population[i] for i in best_indices]
 
-# Destructive two-point crossover
+# Destructive two-point crossover using NumPy slicing
 
 
 def two_point_crossover(parent1, parent2):
@@ -87,41 +89,32 @@ def two_point_crossover(parent1, parent2):
         (parent1[:crossover_point1], parent2[crossover_point1:crossover_point2], parent1[crossover_point2:]))
     child2 = np.vstack(
         (parent2[:crossover_point1], parent1[crossover_point1:crossover_point2], parent2[crossover_point2:]))
-    return child1, child2
+    return creator.Individual(child1), creator.Individual(child2)
 
-# Uniform crossover
+# Uniform crossover using NumPy's efficient indexing
 
 
 def uniform_crossover(parent1, parent2):
-    child1 = np.empty_like(parent1)
-    child2 = np.empty_like(parent2)
-    for i in range(8):
-        for j in range(8):
-            if random.random() > 0.5:
-                child1[i, j] = parent1[i, j]
-                child2[i, j] = parent2[i, j]
-            else:
-                child1[i, j] = parent2[i, j]
-                child2[i, j] = parent1[i, j]
-    return child1, child2
+    mask = np.random.rand(8, 8) > 0.5
+    child1 = np.where(mask[:, :, None], parent1, parent2)
+    child2 = np.where(mask[:, :, None], parent2, parent1)
+    return creator.Individual(child1), creator.Individual(child2)
 
 # Mutate a candidate solution
 
 
 def mutate(puzzle, generation, fitness_score):
-    # Adaptive mutation rate
     mutation_rate = MUTATION_RATE if generation < 0.75 * \
         GENERATIONS else MUTATION_RATE * (1 - fitness_score)
 
-    if random.random() < mutation_rate:
-        # Higher mutation rates for first 75% of generations
-        # More swaps in early generations
-        swaps = 2 if generation < 0.75 * GENERATIONS else 1
-        for _ in range(swaps):
-            i1, j1 = random.randint(0, 7), random.randint(0, 7)
-            i2, j2 = random.randint(0, 7), random.randint(0, 7)
-            # Swap two tiles
-            puzzle[i1, j1], puzzle[i2, j2] = puzzle[i2, j2], puzzle[i1, j1]
+    if np.random.rand() < mutation_rate:
+        # Perform tile swaps
+        num_swaps = 2 if generation < 0.75 * GENERATIONS else 1
+        for _ in range(num_swaps):
+            idx1 = np.random.randint(0, 8, size=2)
+            idx2 = np.random.randint(0, 8, size=2)
+            puzzle[idx1[0], idx1[1]], puzzle[idx2[0], idx2[1]] = puzzle[idx2[0],
+                                                                        idx2[1]].copy(), puzzle[idx1[0], idx1[1]].copy()
     return puzzle
 
 # Run the genetic algorithm
@@ -132,41 +125,46 @@ def run_genetic_algorithm(tiles):
     best_solution = None
     best_score = -1
 
+    start_time = time.time()  # Record the start time
+
     for generation in range(GENERATIONS):
         # Selection
         population = selection(population)
 
-        # Crossover phase based on the generation
+        # Crossover phase
         new_population = []
         while len(new_population) < POPULATION_SIZE:
             parent1, parent2 = random.sample(population, 2)
 
             if generation < 0.75 * GENERATIONS:
-                # First 75%: Use destructive two-point crossover
                 child1, child2 = two_point_crossover(parent1, parent2)
             else:
-                # Last 25%: Use uniform crossover
                 child1, child2 = uniform_crossover(parent1, parent2)
 
-            # Mutate the children
+            # Mutate and append to new population
             child1 = mutate(child1, generation, fitness(child1))
             child2 = mutate(child2, generation, fitness(child2))
-
             new_population.extend([child1, child2])
 
-        # Limit to population size
         population = new_population[:POPULATION_SIZE]
 
-        # Check for the best solution
+        # Track best solution
         for puzzle in population:
             score = fitness(puzzle)
             if score > best_score:
                 best_score = score
                 best_solution = puzzle
 
-        # Log the best fitness score for the current generation
+        # Log the best fitness score for the current generation with timestamp
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(
-            f"Generation {generation + 1}/{GENERATIONS}: Best Fitness (score) = {best_score}")
+            f"[{timestamp}] Generation {generation + 1}/{GENERATIONS}: Best Fitness (score) = {best_score}")
+
+    end_time = time.time()  # Record the end time
+    total_run_time = end_time - start_time
+
+    # Log total run time
+    print(f"Total Run Time: {total_run_time:.2f} seconds")
 
     return best_solution
 
