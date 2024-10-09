@@ -1,3 +1,5 @@
+# Qian Yi Wang (40211303) Philip Carlsson-Coulombe (40208572)
+
 import random
 import numpy as np
 import pandas as pd
@@ -221,7 +223,7 @@ def run_genetic_algorithm(tiles):
 
 
 # Write the output to a file
-team_info = "Qian Yi Wang 40211303 Philip Carlsson-Coulombe 40208572"
+team_info = "Qian Yi Wang (40211303) Philip Carlsson-Coulombe (40208572)"
 
 
 def write_output(file_path, solution):

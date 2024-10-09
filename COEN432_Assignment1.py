@@ -1,8 +1,8 @@
 import random
 import numpy as np
 import pandas as pd
-import time  # Import the time module
-from datetime import datetime  # For logging timestamps
+import time
+from datetime import datetime
 from deap import tools, base, creator
 
 # Constants
@@ -17,6 +17,7 @@ creator.create("FitnessMax", base.Fitness, weights=(1.0,))
 creator.create("Individual", np.ndarray, fitness=creator.FitnessMax)
 
 # Optimized input file reader using pandas
+# should be optimal
 
 
 def read_input(file_path):
@@ -39,6 +40,8 @@ def initialize_population(tiles):
         population.append(creator.Individual(grid_arrangement))
     return population
 
+# counts correct edges since max # good edges is 112
+
 
 def fitness(individual):
     puzzle = np.array(individual).reshape(8, 8, 4)
@@ -48,7 +51,7 @@ def fitness(individual):
     fitness_score = 112 - total_mismatches
     return fitness_score,
 
-# Select the best candidates using efficient numpy operations
+# Select the best candidates using numpy for faster
 
 
 def selection(population):
@@ -84,7 +87,7 @@ def create_valid_individual(child, tiles):
     unique_tiles = set(map(tuple, map(tuple, tiles)))
     for i in range(8):
         for j in range(8):
-            # Ensure child[i][j] is a valid tile configuration
+            # check child[i][j] is a valid tile configuration
             if tuple(child[i][j]) not in unique_tiles:
                 # Replace with a random valid tile
                 child[i][j] = random.choice(tiles)
