@@ -7,7 +7,7 @@ from deap import tools, base, creator
 
 # Constants
 POPULATION_SIZE = 1000
-GENERATIONS = 500
+GENERATIONS = 100
 MUTATION_RATE = 0.8
 
 # DEAP setup
@@ -43,41 +43,27 @@ def initialize_population(tiles):
         population.append(creator.Individual(grid_arrangement))
     return population
 
-# Optimized fitness function using vectorized operations
 
+def fitness(individual):
+    ind_tuple = tuple(individual)
+    puzzle = np.array(individual).reshape(8, 8, 4)
+    right_edges = puzzle[:, :-1, 1] != puzzle[:, 1:, 3]
+    bottom_edges = puzzle[:-1, :, 2] != puzzle[1:, :, 0]
 
-def fitness(puzzle):
-    score = 0
-    edge_weight = 2.0  # Weight for matches
-    mismatch_penalty = -1.0  # Penalty for mismatches
-    contiguous_bonus = 1.0  # Bonus for both edges matching
-
-    # Compute right edge matches
-    right_edges = puzzle[:, :-1, 1] == puzzle[:, 1:, 3]
-    right_matches = np.sum(right_edges) * edge_weight
-    right_mismatches = np.sum(~right_edges) * mismatch_penalty
-
-    # Compute bottom edge matches
-    bottom_edges = puzzle[:-1, :, 2] == puzzle[1:, :, 0]
-    bottom_matches = np.sum(bottom_edges) * edge_weight
-    bottom_mismatches = np.sum(~bottom_edges) * mismatch_penalty
-
-    # Contiguous bonuses where both right and bottom match
-    contiguous_matches = np.sum(
-        right_edges[:-1, :] & bottom_edges[:, :-1]) * contiguous_bonus
-
-    score += right_matches + right_mismatches + \
-        bottom_matches + bottom_mismatches + contiguous_matches
-    return score
+    total_mismatches = np.sum(right_edges) + np.sum(bottom_edges)
+    fitness_score = 112 - total_mismatches
+    return fitness_score,
 
 # Select the best candidates using efficient numpy operations
 
 
 def selection(population):
-    fitness_scores = np.array([fitness(puzzle) for puzzle in population])
+    # Get the first element of the fitness score tuple
+    fitness_scores = np.array([fitness(puzzle)[0] for puzzle in population])
     best_indices = np.argsort(
         fitness_scores)[-POPULATION_SIZE // 2:]  # Select top 50%
-    return [population[i] for i in best_indices]
+    # Convert to integer indices
+    return [population[int(i)] for i in best_indices]
 
 # Destructive two-point crossover using NumPy slicing
 
@@ -142,15 +128,15 @@ def run_genetic_algorithm(tiles):
                 child1, child2 = uniform_crossover(parent1, parent2)
 
             # Mutate and append to new population
-            child1 = mutate(child1, generation, fitness(child1))
-            child2 = mutate(child2, generation, fitness(child2))
+            child1 = mutate(child1, generation, fitness(child1)[0])
+            child2 = mutate(child2, generation, fitness(child2)[0])
             new_population.extend([child1, child2])
 
         population = new_population[:POPULATION_SIZE]
 
         # Track best solution
         for puzzle in population:
-            score = fitness(puzzle)
+            score = fitness(puzzle)[0]
             if score > best_score:
                 best_score = score
                 best_solution = puzzle

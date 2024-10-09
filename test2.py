@@ -4,19 +4,22 @@ import pandas as pd
 import time
 from datetime import datetime
 from deap import tools, base, creator
+from joblib import Parallel, delayed
 
 # Constants
 POPULATION_SIZE = 1000
 GENERATIONS = 100
-INITIAL_MUTATION_RATE = 0.8  # High mutation rate for diversity
-FINAL_MUTATION_RATE = 0.1  # Low mutation rate for convergence
-ELITISM_SIZE = 10  # Number of top individuals to carry over to the next generation
+INITIAL_MUTATION_RATE = 0.8
+FINAL_MUTATION_RATE = 0.1
+ELITISM_SIZE = 10
+TOURNAMENT_SIZE = 5
+CONSERVATIVE_FITNESS_THRESHOLD = 0.90
 
 # DEAP setup
 creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-creator.create("Individual", np.ndarray, fitness=creator.FitnessMax)
+creator.create("Individual", list, fitness=creator.FitnessMax)
 
-# Optimized input file reader using pandas
+fitness_cache = {}
 
 
 def read_input(file_path):
@@ -31,166 +34,123 @@ def read_input(file_path):
 
 def initialize_population(tiles):
     population = []
-    unique_set = set()  # Use a set to track unique configurations as tuples
-
+    unique_set = set()
     while len(population) < POPULATION_SIZE:
-        arrangement = np.random.permutation(tiles)  # Faster random shuffle
+        arrangement = np.random.permutation(tiles)
         grid_arrangement = arrangement.reshape(8, 8, 4)
-
-        # Convert grid arrangement to a tuple of tuples for uniqueness check
         individual_tuple = tuple(
             map(tuple, grid_arrangement.reshape(-1, 4).tolist()))
-
-        # Ensure uniqueness before adding
         if individual_tuple not in unique_set:
-            unique_set.add(individual_tuple)  # Add to set
-            population.append(creator.Individual(
-                grid_arrangement))  # Append the individual
+            unique_set.add(individual_tuple)
+            population.append(creator.Individual(grid_arrangement.flatten()))
     return population
 
-# Ensure that a child maintains all unique tiles
+
+def all_rotations(tile):
+    return [np.roll(tile, shift) for shift in range(4)]
 
 
-def ensure_unique_tiles(grid_arrangement):
+def ensure_unique_tiles(grid_arrangement, original_tiles):
+    unique_tiles_set = set()
     flattened = grid_arrangement.reshape(-1, 4)
-    unique_tiles = np.unique(flattened, axis=0)
-    while unique_tiles.shape[0] < 64:
-        unique_tiles = np.vstack((unique_tiles, random.choice(flattened)))
-    return unique_tiles.reshape(8, 8, 4)
 
-# Optimized fitness function using vectorized operations
+    original_rotations_set = {
+        tuple(rot) for tile in original_tiles for rot in all_rotations(tile)}
 
-
-# def fitness1(puzzle):
-    score = 0
-    edge_weight = 1.0  # Emphasizing edge matches
-    mismatch_penalty = -0.1  # Moderate penalty for mismatches
-    correct_position_bonus = 1.0  # Reward for correct position
-    contiguous_bonus = 1.5  # Reward for contiguous matches
-
-    # Evaluate right edge matches
-    right_edges = puzzle[:, :-1, 1] == puzzle[:, 1:, 3]
-    right_matches = np.sum(right_edges) * edge_weight
-    right_mismatches = (
-        right_edges.shape[0] - np.sum(right_edges)) * mismatch_penalty
-
-    # Evaluate bottom edge matches
-    bottom_edges = puzzle[:-1, :, 2] == puzzle[1:, :, 0]
-    bottom_matches = np.sum(bottom_edges) * edge_weight
-    bottom_mismatches = (
-        bottom_edges.shape[0] - np.sum(bottom_edges)) * mismatch_penalty
-
-    # Evaluate contiguous matches
-    contiguous_matches = np.sum(
-        right_edges[:-1, :] & bottom_edges[:, :-1]) * contiguous_bonus
-
-    # Count correct position but wrong orientation
-    correct_orientation = (puzzle[:, :, 1] == puzzle[:, :, 3]) | (
-        puzzle[:, :, 2] == puzzle[:, :, 0])
-    correct_position_count = np.sum(correct_orientation)
-
-    # Calculate total score
-    score += (right_matches + bottom_matches + right_mismatches + bottom_mismatches +
-              contiguous_matches + correct_position_count * correct_position_bonus)
-
-    return score
-
-
-def fitness(puzzle):
-    total_mismatches = 0
-
-    # Evaluate right edge matches
-    # True if there is a mismatch
-    right_edges = puzzle[:, :-1, 1] != puzzle[:, 1:, 3]
-    total_mismatches += np.sum(right_edges)
-
-    # Evaluate bottom edge matches
-    # True if there is a mismatch
-    bottom_edges = puzzle[:-1, :, 2] != puzzle[1:, :, 0]
-    total_mismatches += np.sum(bottom_edges)
-
-    # Calculate fitness score as 112 - total_mismatches
-    fitness_score = 112 - total_mismatches
-
-    return fitness_score
-
-# Stochastic Universal Sampling for selection
-
-
-def selection(population, fitness_values):
-    total_fitness = sum(fitness_values)
-    selected = []
-
-    for _ in range(POPULATION_SIZE // 2):
-        pick = random.uniform(0, total_fitness)
-        current = 0
-        for i, individual in enumerate(population):
-            current += fitness_values[i]
-            if current >= pick:
-                selected.append(individual)
+    for tile in flattened:
+        for rotation in all_rotations(tile):
+            if tuple(rotation) in original_rotations_set:
+                unique_tiles_set.add(tuple(rotation))
                 break
 
-    return selected
+    while len(unique_tiles_set) < 64:
+        new_tile = random.choice(original_tiles)
+        for rotation in all_rotations(new_tile):
+            unique_tiles_set.add(tuple(rotation))
+            if len(unique_tiles_set) >= 64:
+                break
 
-# Crossover while ensuring tile uniqueness
+    unique_tiles = np.array(list(unique_tiles_set))
 
+    if unique_tiles.shape[0] < 64:
+        raise ValueError("Insufficient unique tiles.")
 
-def two_point_crossover(parent1, parent2):
-    child1_tiles = np.empty_like(parent1)
-    child2_tiles = np.empty_like(parent2)
-
-    crossover_point1 = random.randint(1, 6)
-    crossover_point2 = random.randint(crossover_point1 + 1, 7)
-
-    for i in range(8):
-        for j in range(8):
-            if (i < crossover_point1 or i >= crossover_point2):
-                child1_tiles[i, j] = parent1[i, j]
-            else:
-                child1_tiles[i, j] = parent2[i, j]
-
-    for i in range(8):
-        for j in range(8):
-            if (i < crossover_point1 or i >= crossover_point2):
-                child2_tiles[i, j] = parent2[i, j]
-            else:
-                child2_tiles[i, j] = parent1[i, j]
-
-    child1_tiles = ensure_unique_tiles(child1_tiles)
-    child2_tiles = ensure_unique_tiles(child2_tiles)
-
-    return creator.Individual(child1_tiles), creator.Individual(child2_tiles)
-
-# Rotate tile to simulate orientation changes
+    return unique_tiles.reshape(8, 8, 4)
 
 
-def rotate_tile(tile):
-    # Rotate right, can be adjusted for different orientations
-    return np.roll(tile, shift=1)
+def fitness(individual):
+    ind_tuple = tuple(individual)
+    if ind_tuple in fitness_cache:
+        return fitness_cache[ind_tuple]
 
-# Mutate a candidate solution while ensuring uniqueness
+    puzzle = np.array(individual).reshape(8, 8, 4)
+    right_edges = puzzle[:, :-1, 1] != puzzle[:, 1:, 3]
+    bottom_edges = puzzle[:-1, :, 2] != puzzle[1:, :, 0]
+
+    total_mismatches = np.sum(right_edges) + np.sum(bottom_edges)
+    fitness_score = 112 - total_mismatches
+
+    fitness_cache[ind_tuple] = fitness_score,
+    return fitness_score,
 
 
-def mutate(puzzle, generation):
-    if generation < 0.75 * GENERATIONS:  # Early generations focus on diversity
-        mutation_rate = INITIAL_MUTATION_RATE
-        if np.random.rand() < mutation_rate:
-            # Randomly choose two positions
-            idx = np.random.randint(0, 8, size=(2, 2))
-            puzzle[idx[0][0], idx[0][1]], puzzle[idx[1][0], idx[1][1]] = puzzle[idx[1]
-                                                                                [0], idx[1][1]].copy(), puzzle[idx[0][0], idx[0][1]].copy()
-            puzzle = ensure_unique_tiles(puzzle)
-    else:  # Later generations focus on orientation adjustment
-        mutation_rate = FINAL_MUTATION_RATE
-        if np.random.rand() < mutation_rate:
-            for i in range(8):
-                for j in range(8):
-                    if np.random.rand() < mutation_rate:  # Randomly rotate some tiles
-                        puzzle[i, j] = rotate_tile(puzzle[i, j])
+def rank_selection(population, fitness_values):
+    sorted_indices = np.argsort(fitness_values)[
+        ::-1]  # Sort in descending order
+    rank_probs = np.arange(len(population)) / \
+        len(population)  # Rank-based probabilities
+    selected_indices = np.random.choice(sorted_indices, size=len(
+        population) // 2, p=rank_probs / np.sum(rank_probs))
+    return [population[i] for i in selected_indices]
 
-    return puzzle
 
-# Run the genetic algorithm
+def uniform_crossover(parent1, parent2, original_tiles):
+    parent1_tiles = np.array(parent1).reshape(8, 8, 4)
+    parent2_tiles = np.array(parent2).reshape(8, 8, 4)
+
+    mask = np.random.rand(8, 8) < 0.5  # Create a random mask for crossover
+    child1_tiles = np.where(mask[..., None], parent1_tiles, parent2_tiles)
+    child2_tiles = np.where(mask[..., None], parent2_tiles, parent1_tiles)
+
+    child1_tiles = ensure_unique_tiles(child1_tiles, original_tiles)
+    child2_tiles = ensure_unique_tiles(child2_tiles, original_tiles)
+
+    return creator.Individual(child1_tiles.flatten()), creator.Individual(child2_tiles.flatten())
+
+
+def two_point_crossover(parent1, parent2, original_tiles):
+    parent1_tiles = np.array(parent1).reshape(8, 8, 4)
+    parent2_tiles = np.array(parent2).reshape(8, 8, 4)
+
+    pt1, pt2 = np.random.randint(0, 8, size=2)
+    if pt1 > pt2:
+        pt1, pt2 = pt2, pt1
+
+    child1_tiles = np.copy(parent1_tiles)
+    child2_tiles = np.copy(parent2_tiles)
+
+    child1_tiles[pt1:pt2, :, :] = parent2_tiles[pt1:pt2, :, :]
+    child2_tiles[pt1:pt2, :, :] = parent1_tiles[pt1:pt2, :, :]
+
+    child1_tiles = ensure_unique_tiles(child1_tiles, original_tiles)
+    child2_tiles = ensure_unique_tiles(child2_tiles, original_tiles)
+
+    return creator.Individual(child1_tiles.flatten()), creator.Individual(child2_tiles.flatten())
+
+
+def adaptive_mutate(puzzle, best_score, tiles):
+    puzzle = np.array(puzzle).reshape(8, 8, 4)
+
+    mutation_rate = FINAL_MUTATION_RATE if best_score >= 112 * \
+        CONSERVATIVE_FITNESS_THRESHOLD else INITIAL_MUTATION_RATE
+
+    if np.random.rand() < mutation_rate:
+        idx = np.random.randint(0, 8, size=(2, 2))
+        puzzle[idx[0][0], idx[0][1]], puzzle[idx[1][0], idx[1][1]] = puzzle[idx[1]
+                                                                            [0], idx[1][1]].copy(), puzzle[idx[0][0], idx[0][1]].copy()
+        puzzle = ensure_unique_tiles(puzzle, tiles)
+
+    return puzzle.flatten()
 
 
 def run_genetic_algorithm(tiles):
@@ -201,48 +161,48 @@ def run_genetic_algorithm(tiles):
     start_time = time.time()
 
     for generation in range(GENERATIONS):
-        # Calculate fitness for the entire population once
-        fitness_values = [fitness(ind) for ind in population]
+        fitness_values = Parallel(n_jobs=-1)(delayed(fitness)(ind)
+                                             for ind in population)
 
-        # Selection
-        population = selection(population, fitness_values)
+        # Using rank selection instead of tournament
+        population = rank_selection(
+            population, [fit[0] for fit in fitness_values])
 
-        # Carry over the best individuals
-        elite_individuals = sorted(population, key=fitness, reverse=True)[
-            :ELITISM_SIZE]
+        elite_individuals = sorted(population, key=lambda ind: fitness(ind)[
+                                   0], reverse=True)[:ELITISM_SIZE]
         new_population = elite_individuals[:]
 
-        # Crossover phase
         while len(new_population) < POPULATION_SIZE:
             parent1, parent2 = random.sample(population, 2)
-            child1, child2 = two_point_crossover(parent1, parent2)
 
-            child1 = mutate(child1, generation)
-            child2 = mutate(child2, generation)
+            # Choose crossover method based on best score
+            child1, child2 = two_point_crossover(parent1, parent2, tiles) if best_score >= 112 * \
+                CONSERVATIVE_FITNESS_THRESHOLD else uniform_crossover(parent1, parent2, tiles)
+
+            child1 = adaptive_mutate(child1, best_score, tiles)
+            child2 = adaptive_mutate(child2, best_score, tiles)
             new_population.extend([child1, child2])
 
         population = new_population[:POPULATION_SIZE]
 
-        # Track best solution
         for puzzle in population:
-            score = fitness(puzzle)
+            score = fitness(puzzle)[0]
             if score > best_score:
                 best_score = score
                 best_solution = puzzle
 
-        # Log the best fitness score for the current generation with timestamp
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(
             f"[{timestamp}] Generation {generation + 1}/{GENERATIONS}: Best Fitness (score) = {best_score}")
 
     end_time = time.time()
     total_run_time = end_time - start_time
-    print(f"Total Run Time: {total_run_time:.2f} seconds")
+    print(
+        f"Total Run Time: {total_run_time:.2f} seconds  |  # Mismatches = {112-best_score}")
 
-    return best_solution
+    return best_solution.reshape(8, 8, 4)
 
 
-# Write the output to a file
 team_info = "TeamName TeamID1 TeamID2"
 
 
@@ -254,7 +214,6 @@ def write_output(file_path, solution):
             file.write(line + '\n')
 
 
-# Main execution
 if __name__ == "__main__":
     input_file = "Ass1Input.txt"
     output_file = "Ass1Output.txt"
