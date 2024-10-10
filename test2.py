@@ -11,6 +11,7 @@ from deap import tools, base, creator
 POPULATION_SIZE = 1000
 GENERATIONS = 100
 MAX_MUTATION_RATE = 0.9
+# scale the mutation rate with fitness (look into tweaking the values)
 MIN_MUTATION_RATE = 0.1
 FITNESS_THRESHOLD = 60  # The fitness score at which to switch crossover strategies
 
