@@ -6,11 +6,12 @@ from datetime import datetime
 from deap import tools, base, creator
 
 # Constants
-POPULATION_SIZE = 1000
-GENERATIONS = 100
+POPULATION_SIZE = 10000
+GENERATIONS = 1000
 MAX_MUTATION_RATE = 0.8
 MIN_MUTATION_RATE = 0.2
 FITNESS_THRESHOLD = 70  # The fitness score at which to switch crossover strategies
+ELITE_PERCENTAGE = 0.1  # Percentage of elite individuals to carry over
 
 # DEAP setup
 creator.create("FitnessMax", base.Fitness, weights=(1.0,))
@@ -59,10 +60,51 @@ def selection(population):
         fitness_scores)[-POPULATION_SIZE // 2:]  # Select top 50%
     return [population[i] for i in best_indices]
 
-# Two-point crossover ensuring valid tiles
+# Count tiles from the original input
 
 
-def two_point_crossover(parent1, parent2):
+def count_tiles(tiles):
+    tile_counts = {}
+    for tile in tiles.reshape(-1, 4):
+        tile_tuple = tuple(tile)
+        tile_counts[tile_tuple] = tile_counts.get(tile_tuple, 0) + 1
+    return tile_counts
+
+# Repair child by replacing excess tiles
+
+
+def repair_child(child, original_tile_counts):
+    child_counts = {}
+    for tile in child.reshape(-1, 4):
+        tile_tuple = tuple(tile)
+        child_counts[tile_tuple] = child_counts.get(tile_tuple, 0) + 1
+
+    excess_tiles = []
+    for tile, count in child_counts.items():
+        if count > original_tile_counts.get(tile, 0):
+            excess_tiles.extend(
+                [tile] * (count - original_tile_counts.get(tile, 0)))
+
+    valid_tiles = [tile for tile,
+                   count in original_tile_counts.items() if count > 0]
+
+    for excess_tile in excess_tiles:
+        if valid_tiles:
+            # Randomly choose a position to replace an excess tile
+            idx = np.random.randint(0, 8), np.random.randint(0, 8)
+            child[idx] = random.choice(valid_tiles)
+            # Update the original tile counts
+            original_tile_counts[tuple(child[idx])] -= 1
+            valid_tiles.remove(tuple(child[idx]))
+
+    return child
+
+# Controlled two-point crossover ensuring valid tiles
+
+
+def controlled_two_point_crossover(parent1, parent2, original_tiles):
+    original_tile_counts = count_tiles(original_tiles)
+
     crossover_point1 = random.randint(1, 6)
     crossover_point2 = random.randint(crossover_point1 + 1, 7)
 
@@ -71,6 +113,10 @@ def two_point_crossover(parent1, parent2):
         (parent1[:crossover_point1], parent2[crossover_point1:crossover_point2], parent1[crossover_point2:]))
     child2 = np.vstack(
         (parent2[:crossover_point1], parent1[crossover_point1:crossover_point2], parent2[crossover_point2:]))
+
+    # Repair children to ensure valid tile counts
+    child1 = repair_child(child1, original_tile_counts.copy())
+    child2 = repair_child(child2, original_tile_counts.copy())
 
     return creator.Individual(child1), creator.Individual(child2)
 
@@ -84,59 +130,51 @@ def uniform_crossover(parent1, parent2):
 
     return creator.Individual(child1), creator.Individual(child2)
 
-# Rotate tile function
+# Rotate a tile
 
 
 def rotate_tile(tile, rotations):
-    # Define a mapping for 0, 1, 2, and 3 rotations
     rotation_mapping = {
-        0: tile,                         # No rotation
+        0: tile,                          # No rotation
         1: [tile[3], tile[0], tile[1], tile[2]],  # 1 clockwise rotation
         2: [tile[2], tile[3], tile[0], tile[1]],  # 2 clockwise rotations
         3: [tile[1], tile[2], tile[3], tile[0]],  # 3 clockwise rotations
     }
     return rotation_mapping[rotations]
 
-# Swap two tiles in the puzzle
+# Swap tiles in the puzzle
 
 
 def swap_tiles(puzzle, idx1, idx2):
-    # Create a copy of the puzzle to avoid modifying the original
     new_puzzle = puzzle.copy()
-
-    # Swap tiles using NumPy's advanced indexing
     new_puzzle[idx1], new_puzzle[idx2] = new_puzzle[idx2].copy(
     ), new_puzzle[idx1].copy()
-
     return new_puzzle
 
 # Mutate a candidate solution ensuring valid tiles
 
 
 def mutate(puzzle, tiles, fitness_score):
-    mutation_rate = MAX_MUTATION_RATE * \
-        (1 - (fitness_score / 112)) + MIN_MUTATION_RATE
-    mutation_rate = min(mutation_rate, MAX_MUTATION_RATE)
+    if fitness_score < 112:  # Only scale if fitness is less than the max
+        mutation_rate = MAX_MUTATION_RATE * (1 - (fitness_score / 112))
+        mutation_rate = max(mutation_rate, MIN_MUTATION_RATE)
+    else:
+        mutation_rate = MIN_MUTATION_RATE  # Apply minimum rate if fitness is maximized
 
-    # Randomly determine the number of mutations to perform (between 5 and 15)
-    num_mutations = 2 if fitness_score < FITNESS_THRESHOLD else 1
-
-    for _ in range(num_mutations):
-        if np.random.rand() < mutation_rate:
-            # Random tile swap
+    if np.random.rand() < mutation_rate:
+        num_mutations = 3 if fitness_score < FITNESS_THRESHOLD else 1
+        for _ in range(num_mutations):
+            action = random.choice(['swap', 'rotate'])
             idx1 = np.random.randint(0, 8, size=2)
-            idx2 = np.random.randint(0, 8, size=2)
 
-            if not np.array_equal(idx1, idx2):
-                # Swap tiles using the swap_tiles function
+            if action == 'swap':
+                idx2 = np.random.randint(0, 8, size=2)
                 puzzle = swap_tiles(puzzle, tuple(idx1), tuple(idx2))
-
-        if np.random.rand() < mutation_rate:
-            # Random tile rotation within the individual puzzle
-            idx1 = np.random.randint(0, 8, size=2)
-            rotations1 = np.random.randint(1, 4)
-            puzzle[idx1[0], idx1[1]] = rotate_tile(
-                puzzle[idx1[0], idx1[1]], rotations1)
+            elif action == 'rotate':
+                tile_to_rotate = puzzle[tuple(idx1)].copy()
+                rotations = np.random.randint(1, 4)  # Rotate 1 to 3 times
+                rotated_tile = rotate_tile(tile_to_rotate, rotations)
+                puzzle[tuple(idx1)] = rotated_tile
 
     return puzzle
 
@@ -154,14 +192,19 @@ def run_genetic_algorithm(tiles):
         # Selection
         population = selection(population)
 
+        # Preserve elite individuals
+        elite_count = int(ELITE_PERCENTAGE * POPULATION_SIZE)
+        elites = population[-elite_count:]  # Keep top elite_count individuals
+
         # Crossover phase
-        new_population = []
+        new_population = list(elites)  # Start new population with elites
         while len(new_population) < POPULATION_SIZE:
             parent1, parent2 = random.sample(population, 2)
 
             # Switch to uniform crossover based on fitness score
             if fitness(parent1)[0] < FITNESS_THRESHOLD and fitness(parent2)[0] < FITNESS_THRESHOLD:
-                child1, child2 = two_point_crossover(parent1, parent2)
+                child1, child2 = controlled_two_point_crossover(
+                    parent1, parent2, tiles)
             else:
                 child1, child2 = uniform_crossover(parent1, parent2)
 

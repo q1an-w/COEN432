@@ -11,6 +11,7 @@ GENERATIONS = 100
 MAX_MUTATION_RATE = 0.8
 MIN_MUTATION_RATE = 0.2
 FITNESS_THRESHOLD = 70  # The fitness score at which to switch crossover strategies
+ELITE_PERCENTAGE = 0.1  # Percentage of elite individuals to carry over
 
 # DEAP setup
 creator.create("FitnessMax", base.Fitness, weights=(1.0,))
@@ -85,30 +86,54 @@ def uniform_crossover(parent1, parent2):
 
     return creator.Individual(child1), creator.Individual(child2)
 
+# Rotate a tile
+
+
+def rotate_tile(tile, rotations):
+    rotation_mapping = {
+        0: tile,                          # No rotation
+        1: [tile[3], tile[0], tile[1], tile[2]],  # 1 clockwise rotation
+        2: [tile[2], tile[3], tile[0], tile[1]],  # 2 clockwise rotations
+        3: [tile[1], tile[2], tile[3], tile[0]],  # 3 clockwise rotations
+    }
+    return rotation_mapping[rotations]
+
+
+def swap_tiles(puzzle, idx1, idx2):
+    # Create a copy of the puzzle to avoid modifying the original
+    new_puzzle = puzzle.copy()
+
+    # Swap tiles using NumPy's advanced indexing
+    new_puzzle[idx1], new_puzzle[idx2] = new_puzzle[idx2].copy(
+    ), new_puzzle[idx1].copy()
+
+    return new_puzzle
 # Mutate a candidate solution ensuring valid tiles
 
 
 def mutate(puzzle, tiles, fitness_score):
-    # Logarithmic scaling of mutation rate based on fitness score
     if fitness_score < 112:  # Only scale if fitness is less than the max
         mutation_rate = MAX_MUTATION_RATE * (1 - (fitness_score / 112))
-        # Ensure mutation rate does not go below minimum
         mutation_rate = max(mutation_rate, MIN_MUTATION_RATE)
     else:
         mutation_rate = MIN_MUTATION_RATE  # Apply minimum rate if fitness is maximized
 
     if np.random.rand() < mutation_rate:
-        # More swaps if fitness is low
-        num_swaps = 2 if fitness_score < FITNESS_THRESHOLD else 1
-        for _ in range(num_swaps):
+        num_mutations = 3 if fitness_score < FITNESS_THRESHOLD else 1
+        for _ in range(num_mutations):
+            action = random.choice(['swap', 'rotate'])
             idx1 = np.random.randint(0, 8, size=2)
-            idx2 = np.random.randint(0, 8, size=2)
 
-            # Ensure we are only swapping with valid tiles
-            valid_tile1 = random.choice(tiles)
-            valid_tile2 = random.choice(tiles)
-            puzzle[idx1[0], idx1[1]] = valid_tile1
-            puzzle[idx2[0], idx2[1]] = valid_tile2
+            if action == 'swap':
+                idx2 = np.random.randint(0, 8, size=2)
+                # Swap tiles
+                puzzle = swap_tiles(puzzle, tuple(idx1), tuple(idx2))
+            elif action == 'rotate':
+                # Rotate a tile at idx1
+                rotations = np.random.randint(1, 4)  # Rotate 1 to 3 times
+                tile_to_rotate = puzzle[tuple(idx1)].copy()
+                rotated_tile = rotate_tile(tile_to_rotate, rotations)
+                puzzle[tuple(idx1)] = rotated_tile
 
     return puzzle
 
@@ -126,8 +151,12 @@ def run_genetic_algorithm(tiles):
         # Selection
         population = selection(population)
 
+        # Preserve elite individuals
+        elite_count = int(ELITE_PERCENTAGE * POPULATION_SIZE)
+        elites = population[-elite_count:]  # Keep top elite_count individuals
+
         # Crossover phase
-        new_population = []
+        new_population = list(elites)  # Start new population with elites
         while len(new_population) < POPULATION_SIZE:
             parent1, parent2 = random.sample(population, 2)
 
