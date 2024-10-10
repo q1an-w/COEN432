@@ -6,12 +6,16 @@ from datetime import datetime
 from deap import tools, base, creator
 
 # Constants
-POPULATION_SIZE = 10000
-GENERATIONS = 1000
-MAX_MUTATION_RATE = 0.8
-MIN_MUTATION_RATE = 0.2
-FITNESS_THRESHOLD = 70  # The fitness score at which to switch crossover strategies
-ELITE_PERCENTAGE = 0.1  # Percentage of elite individuals to carry over
+POPULATION_SIZE = 1000
+GENERATIONS = 100
+MAX_MUTATION_RATE = 0.95
+MIN_MUTATION_RATE = 0.15
+FITNESS_THRESHOLD = 50  # The fitness score at which to switch crossover strategies
+ELITE_PERCENTAGE = 0.15  # Percentage of elite individuals to carry over
+BASE_RANDOM_PERCENTAGE = 0.10  # Base percentage of random individuals to introduce
+# Number of generations for each stagnation level
+STAGNATION_LIMITS = [2, 5, 8]
+RANDOM_INCREMENT = [0.05, 0.2, 0.25]  # Increment for each stagnation level
 
 # DEAP setup
 creator.create("FitnessMax", base.Fitness, weights=(1.0,))
@@ -60,51 +64,18 @@ def selection(population):
         fitness_scores)[-POPULATION_SIZE // 2:]  # Select top 50%
     return [population[i] for i in best_indices]
 
-# Count tiles from the original input
+# Generate a random individual
 
 
-def count_tiles(tiles):
-    tile_counts = {}
-    for tile in tiles.reshape(-1, 4):
-        tile_tuple = tuple(tile)
-        tile_counts[tile_tuple] = tile_counts.get(tile_tuple, 0) + 1
-    return tile_counts
+def generate_random_individual(tiles):
+    arrangement = np.random.permutation(tiles)
+    grid_arrangement = arrangement.reshape(8, 8, 4)
+    return creator.Individual(grid_arrangement)
 
-# Repair child by replacing excess tiles
+# Two-point crossover ensuring valid tiles
 
 
-def repair_child(child, original_tile_counts):
-    child_counts = {}
-    for tile in child.reshape(-1, 4):
-        tile_tuple = tuple(tile)
-        child_counts[tile_tuple] = child_counts.get(tile_tuple, 0) + 1
-
-    excess_tiles = []
-    for tile, count in child_counts.items():
-        if count > original_tile_counts.get(tile, 0):
-            excess_tiles.extend(
-                [tile] * (count - original_tile_counts.get(tile, 0)))
-
-    valid_tiles = [tile for tile,
-                   count in original_tile_counts.items() if count > 0]
-
-    for excess_tile in excess_tiles:
-        if valid_tiles:
-            # Randomly choose a position to replace an excess tile
-            idx = np.random.randint(0, 8), np.random.randint(0, 8)
-            child[idx] = random.choice(valid_tiles)
-            # Update the original tile counts
-            original_tile_counts[tuple(child[idx])] -= 1
-            valid_tiles.remove(tuple(child[idx]))
-
-    return child
-
-# Controlled two-point crossover ensuring valid tiles
-
-
-def controlled_two_point_crossover(parent1, parent2, original_tiles):
-    original_tile_counts = count_tiles(original_tiles)
-
+def two_point_crossover(parent1, parent2):
     crossover_point1 = random.randint(1, 6)
     crossover_point2 = random.randint(crossover_point1 + 1, 7)
 
@@ -113,10 +84,6 @@ def controlled_two_point_crossover(parent1, parent2, original_tiles):
         (parent1[:crossover_point1], parent2[crossover_point1:crossover_point2], parent1[crossover_point2:]))
     child2 = np.vstack(
         (parent2[:crossover_point1], parent1[crossover_point1:crossover_point2], parent2[crossover_point2:]))
-
-    # Repair children to ensure valid tile counts
-    child1 = repair_child(child1, original_tile_counts.copy())
-    child2 = repair_child(child2, original_tile_counts.copy())
 
     return creator.Individual(child1), creator.Individual(child2)
 
@@ -142,7 +109,7 @@ def rotate_tile(tile, rotations):
     }
     return rotation_mapping[rotations]
 
-# Swap tiles in the puzzle
+# Swap tiles
 
 
 def swap_tiles(puzzle, idx1, idx2):
@@ -154,12 +121,27 @@ def swap_tiles(puzzle, idx1, idx2):
 # Mutate a candidate solution ensuring valid tiles
 
 
-def mutate(puzzle, tiles, fitness_score):
+# Define a maximum cap for the mutation rate based on stagnation
+MAX_MUTATION_RATE_BONUS = 0.4  # Maximum additional bonus to the mutation rate
+STAGNATION_BONUS_SCALING = 0.05  # Scaling factor for the stagnation counter bonus
+
+
+def mutate(puzzle, stagnation_counter, fitness_score):
+    # Calculate the base mutation rate
     if fitness_score < 112:  # Only scale if fitness is less than the max
         mutation_rate = MAX_MUTATION_RATE * (1 - (fitness_score / 112))
         mutation_rate = max(mutation_rate, MIN_MUTATION_RATE)
     else:
         mutation_rate = MIN_MUTATION_RATE  # Apply minimum rate if fitness is maximized
+
+    # Calculate the mutation bonus based on stagnation counter
+    mutation_bonus = min(stagnation_counter *
+                         STAGNATION_BONUS_SCALING, MAX_MUTATION_RATE_BONUS)
+
+    # Adjust the mutation rate by adding the mutation bonus
+    mutation_rate += mutation_bonus
+    # Cap the mutation rate
+    mutation_rate = min(mutation_rate, MAX_MUTATION_RATE)
 
     if np.random.rand() < mutation_rate:
         num_mutations = 3 if fitness_score < FITNESS_THRESHOLD else 1
@@ -171,12 +153,13 @@ def mutate(puzzle, tiles, fitness_score):
                 idx2 = np.random.randint(0, 8, size=2)
                 puzzle = swap_tiles(puzzle, tuple(idx1), tuple(idx2))
             elif action == 'rotate':
-                tile_to_rotate = puzzle[tuple(idx1)].copy()
                 rotations = np.random.randint(1, 4)  # Rotate 1 to 3 times
+                tile_to_rotate = puzzle[tuple(idx1)].copy()
                 rotated_tile = rotate_tile(tile_to_rotate, rotations)
                 puzzle[tuple(idx1)] = rotated_tile
 
     return puzzle
+
 
 # Run the genetic algorithm
 
@@ -185,6 +168,9 @@ def run_genetic_algorithm(tiles):
     population = initialize_population(tiles)
     best_solution = None
     best_fitness = -1
+    stagnation_counter = 0  # Counter for stagnation
+    # Start with base random percentage
+    current_random_percentage = BASE_RANDOM_PERCENTAGE
 
     start_time = time.time()  # Record the start time
 
@@ -196,35 +182,57 @@ def run_genetic_algorithm(tiles):
         elite_count = int(ELITE_PERCENTAGE * POPULATION_SIZE)
         elites = population[-elite_count:]  # Keep top elite_count individuals
 
+        # Generate random individuals based on current random percentage
+        random_count = int(current_random_percentage * POPULATION_SIZE)
+        random_individuals = [generate_random_individual(
+            tiles) for _ in range(random_count)]
+
         # Crossover phase
-        new_population = list(elites)  # Start new population with elites
+        # Start new population with elites and randoms
+        new_population = list(elites) + random_individuals
         while len(new_population) < POPULATION_SIZE:
             parent1, parent2 = random.sample(population, 2)
 
             # Switch to uniform crossover based on fitness score
             if fitness(parent1)[0] < FITNESS_THRESHOLD and fitness(parent2)[0] < FITNESS_THRESHOLD:
-                child1, child2 = controlled_two_point_crossover(
-                    parent1, parent2, tiles)
+                child1, child2 = two_point_crossover(parent1, parent2)
             else:
                 child1, child2 = uniform_crossover(parent1, parent2)
 
             # Mutate and append to new population
-            child1 = mutate(child1, tiles, fitness(child1)[0])
-            child2 = mutate(child2, tiles, fitness(child2)[0])
+            child1 = mutate(child1, stagnation_counter, fitness(child1)[0])
+            child2 = mutate(child2, stagnation_counter, fitness(child2)[0])
             new_population.extend([child1, child2])
 
         population = new_population[:POPULATION_SIZE]
 
         # Track best solution
+        prev_best_score = best_fitness
         for puzzle in population:
             score = fitness(puzzle)[0]
             if score > best_fitness:
                 best_fitness = score
                 best_solution = puzzle
+                prev_best_score = 0  # Reset stagnation counter on improvement
+
+        if best_fitness > prev_best_score:
+            stagnation_counter = 0
+        else:
+            stagnation_counter += 1
+        # Adjust random individuals based on stagnation
+        if stagnation_counter >= STAGNATION_LIMITS[0] and stagnation_counter < STAGNATION_LIMITS[1]:
+            current_random_percentage = BASE_RANDOM_PERCENTAGE + \
+                RANDOM_INCREMENT[0]
+        elif stagnation_counter >= STAGNATION_LIMITS[1] and stagnation_counter < STAGNATION_LIMITS[2]:
+            current_random_percentage = BASE_RANDOM_PERCENTAGE + \
+                RANDOM_INCREMENT[1]
+        elif stagnation_counter >= STAGNATION_LIMITS[2]:
+            current_random_percentage = BASE_RANDOM_PERCENTAGE + \
+                RANDOM_INCREMENT[2]
 
         # Log the current best fitness score
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(f"[{timestamp}] Generation {generation + 1}/{GENERATIONS}: Best Fitness (score) = {best_fitness}")
+        print(f"[{timestamp}] Generation {generation + 1}/{GENERATIONS}: Best Fitness (score) = {best_fitness} | Stagnation : {stagnation_counter}")
 
     end_time = time.time()  # Record the end time
     total_run_time = end_time - start_time
@@ -252,9 +260,6 @@ def write_output(file_path, solution):
 if __name__ == "__main__":
     input_file = "Ass1Input.txt"
     output_file = "Ass1Output.txt"
-
     tiles = read_input(input_file)
     best_solution = run_genetic_algorithm(tiles)
     write_output(output_file, best_solution)
-
-    print("Output written to", output_file)

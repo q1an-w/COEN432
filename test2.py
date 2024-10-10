@@ -12,6 +12,7 @@ MAX_MUTATION_RATE = 0.8
 MIN_MUTATION_RATE = 0.2
 FITNESS_THRESHOLD = 70  # The fitness score at which to switch crossover strategies
 ELITE_PERCENTAGE = 0.1  # Percentage of elite individuals to carry over
+RANDOM_PERCENTAGE = 0.15  # Percentage of random individuals to introduce
 
 # DEAP setup
 creator.create("FitnessMax", base.Fitness, weights=(1.0,))
@@ -59,6 +60,14 @@ def selection(population):
     best_indices = np.argsort(
         fitness_scores)[-POPULATION_SIZE // 2:]  # Select top 50%
     return [population[i] for i in best_indices]
+
+# Generate a random individual
+
+
+def generate_random_individual(tiles):
+    arrangement = np.random.permutation(tiles)
+    grid_arrangement = arrangement.reshape(8, 8, 4)
+    return creator.Individual(grid_arrangement)
 
 # Two-point crossover ensuring valid tiles
 
@@ -108,6 +117,7 @@ def swap_tiles(puzzle, idx1, idx2):
     ), new_puzzle[idx1].copy()
 
     return new_puzzle
+
 # Mutate a candidate solution ensuring valid tiles
 
 
@@ -155,8 +165,14 @@ def run_genetic_algorithm(tiles):
         elite_count = int(ELITE_PERCENTAGE * POPULATION_SIZE)
         elites = population[-elite_count:]  # Keep top elite_count individuals
 
+        # Generate random individuals
+        random_count = int(RANDOM_PERCENTAGE * POPULATION_SIZE)
+        random_individuals = [generate_random_individual(
+            tiles) for _ in range(random_count)]
+
         # Crossover phase
-        new_population = list(elites)  # Start new population with elites
+        # Start new population with elites and randoms
+        new_population = list(elites) + random_individuals
         while len(new_population) < POPULATION_SIZE:
             parent1, parent2 = random.sample(population, 2)
 
@@ -189,7 +205,7 @@ def run_genetic_algorithm(tiles):
 
     # Log total run time
     print(
-        f"Total Run Time: {total_run_time:.2f} seconds | Mismatches: {112-best_fitness}")
+        f"Total Run Time: {total_run_time:.2f} seconds | Mismatches: {112 - best_fitness}")
 
     return best_solution
 
@@ -213,6 +229,3 @@ if __name__ == "__main__":
 
     tiles = read_input(input_file)
     best_solution = run_genetic_algorithm(tiles)
-    write_output(output_file, best_solution)
-
-    print("Output written to", output_file)
