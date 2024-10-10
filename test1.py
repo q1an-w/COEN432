@@ -1,18 +1,20 @@
+# Qian Yi Wang (40211303) Philip Carlsson-Coulombe (40208572)
+
 import random
 import numpy as np
 import pandas as pd
-import time  # Import the time module
-from datetime import datetime  # For logging timestamps
+import time
+from datetime import datetime
 from deap import tools, base, creator
-from numba import jit
-from concurrent.futures import ProcessPoolExecutor
 
 # Constants
 POPULATION_SIZE = 1000
-GENERATIONS = 1000
-MAX_MUTATION_RATE = 0.8
-MIN_MUTATION_RATE = 0.1
-FITNESS_THRESHOLD = 90  # The fitness score at which to switch crossover strategies
+GENERATIONS = 100
+# Reduced max mutation rate slightly for a more steady mutation presence
+MAX_MUTATION_RATE = 0.85
+# Higher minimum mutation rate to maintain mutation throughout the simulation
+MIN_MUTATION_RATE = 0.35
+FITNESS_THRESHOLD = 100  # Fitness score at which to stop crossovers
 
 # DEAP setup
 creator.create("FitnessMax", base.Fitness, weights=(1.0,))
@@ -30,38 +32,86 @@ def read_input(file_path):
             tiles.append(tile_digits)
     return np.array(tiles).reshape(64, 4)
 
+# Rotate a tile by a given number of 90-degree rotations
+
+
+def rotate_tile(tile, rotations):
+    return np.roll(tile, -rotations)
+
+# Check if a tile matches any of the valid tiles (considering rotations)
+
+
+def is_valid_tile(tile, unique_tiles):
+    for rotations in range(4):
+        rotated_tile = tuple(rotate_tile(tile, rotations))
+        if rotated_tile in unique_tiles:
+            return True
+    return False
+
+# Find the closest valid tile (with minimal differences) from the set of valid tiles
+
+
+def find_closest_valid_tile(tile, tiles):
+    min_diff = float('inf')
+    best_match = None
+
+    for valid_tile in tiles:
+        for rotations in range(4):
+            rotated_tile = rotate_tile(valid_tile, rotations)
+            diff = np.sum(np.abs(np.array(tile) - np.array(rotated_tile)))
+            if diff < min_diff:
+                min_diff = diff
+                best_match = rotated_tile
+
+    return best_match
+
+# Ensure that the individual consists of valid tiles from the input tiles
+
+
+def create_valid_individual(individual, tiles):
+    unique_tiles = set()
+    for tile in tiles:
+        for rotations in range(4):
+            unique_tiles.add(tuple(rotate_tile(tile, rotations)))
+
+    for i in range(8):
+        for j in range(8):
+            tile = individual[i][j]
+            if not is_valid_tile(tile, unique_tiles):
+                valid_tile = find_closest_valid_tile(tile, tiles)
+                individual[i][j] = valid_tile
+
+    return individual
+
 # Initialize the population with unique arrangements of tiles
 
 
 def initialize_population(tiles):
     population = []
     for _ in range(POPULATION_SIZE):
-        arrangement = np.random.permutation(tiles)  # Shuffle all 64 tiles
-        grid_arrangement = arrangement.reshape(
-            8, 8, 4)  # Reshape into 8x8 grid
+        arrangement = np.random.permutation(tiles)  # Faster random shuffle
+        grid_arrangement = arrangement.reshape(8, 8, 4)
         population.append(creator.Individual(grid_arrangement))
     return population
 
+# Fitness function based on edge mismatches
 
-@jit(nopython=True)
+
 def fitness(individual):
     puzzle = np.array(individual).reshape(8, 8, 4)
-    mismatches = (
-        (puzzle[:, :-1, 1] != puzzle[:, 1:, 3]).sum() +
-        (puzzle[:-1, :, 2] != puzzle[1:, :, 0]).sum()
-    )
-    fitness_score = 112 - mismatches
+    right_edges = puzzle[:, :-1, 1] != puzzle[:, 1:, 3]
+    bottom_edges = puzzle[:-1, :, 2] != puzzle[1:, :, 0]
+    total_mismatches = np.sum(right_edges) + np.sum(bottom_edges)
+    fitness_score = 112 - total_mismatches
     return fitness_score,
 
-
-def calculate_fitness(individual):
-    return fitness(individual)[0]
+# Select the best candidates using efficient numpy operations
 
 
 def selection(population):
-    with ProcessPoolExecutor() as executor:
-        fitness_scores = list(executor.map(calculate_fitness, population))
-    best_indices = np.argsort(fitness_scores)[-POPULATION_SIZE // 2:]
+    fitness_scores = np.array([fitness(puzzle)[0] for puzzle in population])
+    best_indices = np.argsort(
+        fitness_scores)[-POPULATION_SIZE // 2:]  # Select top 50%
     return [population[i] for i in best_indices]
 
 # Two-point crossover ensuring valid tiles
@@ -71,33 +121,17 @@ def two_point_crossover(parent1, parent2, tiles):
     crossover_point1 = random.randint(1, 6)
     crossover_point2 = random.randint(crossover_point1 + 1, 7)
 
-    # Create child arrays with swapped sections
     child1 = np.vstack(
         (parent1[:crossover_point1], parent2[crossover_point1:crossover_point2], parent1[crossover_point2:]))
     child2 = np.vstack(
         (parent2[:crossover_point1], parent1[crossover_point1:crossover_point2], parent2[crossover_point2:]))
 
-    # Ensure children contain only valid tiles from the input
     valid_child1 = create_valid_individual(child1, tiles)
     valid_child2 = create_valid_individual(child2, tiles)
 
     return creator.Individual(valid_child1), creator.Individual(valid_child2)
 
-# Create a valid individual using tiles from input
-
-
-def create_valid_individual(child, tiles):
-    # Set of valid tile configurations
-    unique_tiles = set(map(tuple, map(tuple, tiles)))
-    for i in range(8):
-        for j in range(8):
-            # Ensure child[i][j] is a valid tile configuration
-            if tuple(child[i][j]) not in unique_tiles:
-                # Replace with a random valid tile
-                child[i][j] = random.choice(tiles)
-    return child
-
-# Uniform crossover ensuring valid tiles
+# Mutate a candidate solution by performing independent tile swaps and rotations
 
 
 def uniform_crossover(parent1, parent2, tiles):
@@ -112,28 +146,29 @@ def uniform_crossover(parent1, parent2, tiles):
     return creator.Individual(valid_child1), creator.Individual(valid_child2)
 
 
-@jit(nopython=True)
-def mutate(puzzle, tiles, generation, fitness_score):
-    # Logarithmic scaling of mutation rate based on fitness score
-    if fitness_score < 112:  # Only scale if fitness is less than the max
-        mutation_rate = MAX_MUTATION_RATE * (1 - (fitness_score / 112))
-        # Ensure mutation rate does not go below minimum
-        mutation_rate = max(mutation_rate, MIN_MUTATION_RATE)
-    else:
-        mutation_rate = MIN_MUTATION_RATE  # Apply minimum rate if fitness is maximized
+def mutate(puzzle, tiles, fitness_score):
+    # Higher mutation rate to maintain mutations throughout the simulation
+    mutation_rate = MAX_MUTATION_RATE * \
+        (1 - (fitness_score / 112)) + MIN_MUTATION_RATE
+    mutation_rate = min(mutation_rate, MAX_MUTATION_RATE)
 
     if np.random.rand() < mutation_rate:
-        # More swaps if fitness is low
-        num_swaps = 2 if fitness_score < FITNESS_THRESHOLD else 1
-        for _ in range(num_swaps):
+        # Tile swap and rotation happen independently of each other
+
+        # Random tile swap
+        if np.random.rand() < mutation_rate:  # Independent decision for tile swap
             idx1 = np.random.randint(0, 8, size=2)
             idx2 = np.random.randint(0, 8, size=2)
+            puzzle[idx1[0], idx1[1]], puzzle[idx2[0], idx2[1]
+                                             ] = puzzle[idx2[0], idx2[1]], puzzle[idx1[0], idx1[1]]
 
-            # Ensure we are only swapping with valid tiles
-            valid_tile1 = random.choice(tiles)
-            valid_tile2 = random.choice(tiles)
-            puzzle[idx1[0], idx1[1]] = valid_tile1
-            puzzle[idx2[0], idx2[1]] = valid_tile2
+        # Random tile rotation
+        if np.random.rand() < mutation_rate:  # Independent decision for tile rotation
+            idx1 = np.random.randint(0, 8, size=2)
+            rotations1 = np.random.randint(0, 4)
+            puzzle[idx1[0], idx1[1]] = rotate_tile(
+                puzzle[idx1[0], idx1[1]], rotations1)
+
     return puzzle
 
 # Run the genetic algorithm
@@ -147,50 +182,44 @@ def run_genetic_algorithm(tiles):
     start_time = time.time()  # Record the start time
 
     for generation in range(GENERATIONS):
-        # Selection
         population = selection(population)
 
-        # Crossover phase
         new_population = []
         while len(new_population) < POPULATION_SIZE:
             parent1, parent2 = random.sample(population, 2)
 
-            # Switch to uniform crossover based on fitness score
-            if fitness(parent1)[0] < FITNESS_THRESHOLD and fitness(parent2)[0] < FITNESS_THRESHOLD:
-                child1, child2 = two_point_crossover(parent1, parent2, tiles)
-            else:
-                child1, child2 = uniform_crossover(parent1, parent2, tiles)
+            # if fitness(parent1)[0] < FITNESS_THRESHOLD and fitness(parent2)[0] < FITNESS_THRESHOLD:
+            #     child1, child2 = two_point_crossover(parent1, parent2, tiles)
+            # else:
+            #     child1, child2 = uniform_crossover(parent1, parent2, tiles)
+            child1, child2 = parent1.copy(), parent2.copy()
 
-            # Mutate and append to new population
-            child1 = mutate(child1, tiles, generation, fitness(child1)[0])
-            child2 = mutate(child2, tiles, generation, fitness(child2)[0])
+            child1 = mutate(child1, tiles, fitness(child1)[0])
+            child2 = mutate(child2, tiles, fitness(child2)[0])
             new_population.extend([child1, child2])
 
         population = new_population[:POPULATION_SIZE]
 
-        # Track best solution
         for puzzle in population:
             score = fitness(puzzle)[0]
             if score > best_fitness:
                 best_fitness = score
                 best_solution = puzzle
 
-        # Log the best fitness score for the current generation with timestamp
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(
-            f"[{timestamp}] Generation {generation + 1}/{GENERATIONS}: Best Fitness (score) = {best_fitness}")
+        print(f"[{timestamp}] Generation {generation + 1}/{GENERATIONS}: Best Fitness (score) = {best_fitness}")
 
     end_time = time.time()  # Record the end time
     total_run_time = end_time - start_time
 
-    # Log total run time
-    print(f"Total Run Time: {total_run_time:.2f} seconds")
+    print(
+        f"Total Run Time: {total_run_time:.2f} seconds | Mismatches: {112-best_fitness}")
 
     return best_solution
 
 
 # Write the output to a file
-team_info = "TeamName TeamID1 TeamID2"
+team_info = "Qian Yi Wang (40211303) Philip Carlsson-Coulombe (40208572)"
 
 
 def write_output(file_path, solution):
