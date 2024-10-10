@@ -8,16 +8,15 @@ from deap import tools, base, creator
 # Constants
 POPULATION_SIZE = 1000
 GENERATIONS = 100
-MAX_MUTATION_RATE = 0.9
-MIN_MUTATION_RATE = 0.1
-FITNESS_THRESHOLD = 60  # The fitness score at which to switch crossover strategies
+MAX_MUTATION_RATE = 0.8
+MIN_MUTATION_RATE = 0.2
+FITNESS_THRESHOLD = 70  # The fitness score at which to switch crossover strategies
 
 # DEAP setup
 creator.create("FitnessMax", base.Fitness, weights=(1.0,))
 creator.create("Individual", np.ndarray, fitness=creator.FitnessMax)
 
 # Optimized input file reader using pandas
-# should be optimal
 
 
 def read_input(file_path):
@@ -40,7 +39,7 @@ def initialize_population(tiles):
         population.append(creator.Individual(grid_arrangement))
     return population
 
-# counts correct edges since max # good edges is 112
+# Counts correct edges since max # good edges is 112
 
 
 def fitness(individual):
@@ -63,7 +62,7 @@ def selection(population):
 # Two-point crossover ensuring valid tiles
 
 
-def two_point_crossover(parent1, parent2, tiles):
+def two_point_crossover(parent1, parent2):
     crossover_point1 = random.randint(1, 6)
     crossover_point2 = random.randint(crossover_point1 + 1, 7)
 
@@ -74,38 +73,17 @@ def two_point_crossover(parent1, parent2, tiles):
         (parent2[:crossover_point1], parent1[crossover_point1:crossover_point2], parent2[crossover_point2:]))
 
     # Ensure children contain only valid tiles from the input
-    valid_child1 = create_valid_individual(child1, tiles)
-    valid_child2 = create_valid_individual(child2, tiles)
-
-    return creator.Individual(valid_child1), creator.Individual(valid_child2)
-
-# Create a valid individual using tiles from input
-
-
-def create_valid_individual(child, tiles):
-    # Set of valid tile configurations
-    unique_tiles = set(map(tuple, map(tuple, tiles)))
-    for i in range(8):
-        for j in range(8):
-            # check child[i][j] is a valid tile configuration
-            if tuple(child[i][j]) not in unique_tiles:
-                # Replace with a random valid tile
-                child[i][j] = random.choice(tiles)
-    return child
+    return creator.Individual(child1), creator.Individual(child2)
 
 # Uniform crossover ensuring valid tiles
 
 
-def uniform_crossover(parent1, parent2, tiles):
+def uniform_crossover(parent1, parent2):
     mask = np.random.rand(8, 8) > 0.5
     child1 = np.where(mask[:, :, None], parent1, parent2)
     child2 = np.where(mask[:, :, None], parent2, parent1)
 
-    # Ensure children contain only valid tiles from the input
-    valid_child1 = create_valid_individual(child1, tiles)
-    valid_child2 = create_valid_individual(child2, tiles)
-
-    return creator.Individual(valid_child1), creator.Individual(valid_child2)
+    return creator.Individual(child1), creator.Individual(child2)
 
 # Mutate a candidate solution ensuring valid tiles
 
@@ -131,6 +109,7 @@ def mutate(puzzle, tiles, fitness_score):
             valid_tile2 = random.choice(tiles)
             puzzle[idx1[0], idx1[1]] = valid_tile1
             puzzle[idx2[0], idx2[1]] = valid_tile2
+
     return puzzle
 
 # Run the genetic algorithm
@@ -154,9 +133,9 @@ def run_genetic_algorithm(tiles):
 
             # Switch to uniform crossover based on fitness score
             if fitness(parent1)[0] < FITNESS_THRESHOLD and fitness(parent2)[0] < FITNESS_THRESHOLD:
-                child1, child2 = two_point_crossover(parent1, parent2, tiles)
+                child1, child2 = two_point_crossover(parent1, parent2)
             else:
-                child1, child2 = uniform_crossover(parent1, parent2, tiles)
+                child1, child2 = uniform_crossover(parent1, parent2)
 
             # Mutate and append to new population
             child1 = mutate(child1, tiles, fitness(child1)[0])
@@ -174,8 +153,7 @@ def run_genetic_algorithm(tiles):
 
         # Log the current best fitness score
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(
-            f"[{timestamp}] Generation {generation + 1}/{GENERATIONS}: Best Fitness (score) = {best_fitness}")
+        print(f"[{timestamp}] Generation {generation + 1}/{GENERATIONS}: Best Fitness (score) = {best_fitness}")
 
     end_time = time.time()  # Record the end time
     total_run_time = end_time - start_time
@@ -188,7 +166,7 @@ def run_genetic_algorithm(tiles):
 
 
 # Write the output to a file
-team_info = "Qian Yi Wang 40211303 Philip Carlsson-Coulombe 40208572"
+team_info = "Qian Yi Wang (40211303) Philip Carlsson-Coulombe (40208572)"
 
 
 def write_output(file_path, solution):

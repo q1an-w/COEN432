@@ -8,9 +8,9 @@ from deap import tools, base, creator
 # Constants
 POPULATION_SIZE = 1000
 GENERATIONS = 100
-MAX_MUTATION_RATE = 0.95
-MIN_MUTATION_RATE = 0.7
-FITNESS_THRESHOLD = 100  # Fitness score at which to stop crossovers
+MAX_MUTATION_RATE = 0.8
+MIN_MUTATION_RATE = 0.2
+FITNESS_THRESHOLD = 70  # The fitness score at which to switch crossover strategies
 
 # DEAP setup
 creator.create("FitnessMax", base.Fitness, weights=(1.0,))
@@ -28,26 +28,18 @@ def read_input(file_path):
             tiles.append(tile_digits)
     return np.array(tiles).reshape(64, 4)
 
-# Rotate a tile by a given number of 90-degree rotations
-
-
-def rotate_tile(tile, rotations):
-    return np.roll(tile, -rotations)
-
 # Initialize the population with unique arrangements of tiles
 
 
 def initialize_population(tiles):
     population = []
     for _ in range(POPULATION_SIZE):
-        arrangement = np.random.permutation(tiles)  # Random shuffle of tiles
-        rotated_arrangement = np.array(
-            [rotate_tile(tile, np.random.randint(0, 4)) for tile in arrangement])
-        grid_arrangement = rotated_arrangement.reshape(8, 8, 4)
+        arrangement = np.random.permutation(tiles)  # Faster random shuffle
+        grid_arrangement = arrangement.reshape(8, 8, 4)
         population.append(creator.Individual(grid_arrangement))
     return population
 
-# Fitness function based on edge mismatches
+# Counts correct edges since max # good edges is 112
 
 
 def fitness(individual):
@@ -58,7 +50,7 @@ def fitness(individual):
     fitness_score = 112 - total_mismatches
     return fitness_score,
 
-# Select the best candidates using efficient numpy operations
+# Select the best candidates using numpy for faster
 
 
 def selection(population):
@@ -67,39 +59,56 @@ def selection(population):
         fitness_scores)[-POPULATION_SIZE // 2:]  # Select top 50%
     return [population[i] for i in best_indices]
 
-# Mutate a candidate solution by performing independent tile swaps and rotations
+# Two-point crossover ensuring valid tiles
+
+
+def two_point_crossover(parent1, parent2):
+    crossover_point1 = random.randint(1, 6)
+    crossover_point2 = random.randint(crossover_point1 + 1, 7)
+
+    # Create child arrays with swapped sections
+    child1 = np.vstack(
+        (parent1[:crossover_point1], parent2[crossover_point1:crossover_point2], parent1[crossover_point2:]))
+    child2 = np.vstack(
+        (parent2[:crossover_point1], parent1[crossover_point1:crossover_point2], parent2[crossover_point2:]))
+
+    # Ensure children contain only valid tiles from the input
+    return creator.Individual(child1), creator.Individual(child2)
+
+# Uniform crossover ensuring valid tiles
+
+
+def uniform_crossover(parent1, parent2):
+    mask = np.random.rand(8, 8) > 0.5
+    child1 = np.where(mask[:, :, None], parent1, parent2)
+    child2 = np.where(mask[:, :, None], parent2, parent1)
+
+    return creator.Individual(child1), creator.Individual(child2)
+
+# Mutate a candidate solution ensuring valid tiles
 
 
 def mutate(puzzle, tiles, fitness_score):
-    mutation_rate = MAX_MUTATION_RATE * \
-        (1 - (fitness_score / 112)) + MIN_MUTATION_RATE
-    mutation_rate = min(mutation_rate, MAX_MUTATION_RATE)
+    # Logarithmic scaling of mutation rate based on fitness score
+    if fitness_score < 112:  # Only scale if fitness is less than the max
+        mutation_rate = MAX_MUTATION_RATE * (1 - (fitness_score / 112))
+        # Ensure mutation rate does not go below minimum
+        mutation_rate = max(mutation_rate, MIN_MUTATION_RATE)
+    else:
+        mutation_rate = MIN_MUTATION_RATE  # Apply minimum rate if fitness is maximized
 
-    # Randomly determine the number of mutations to perform (between 2 and 5)
-    # Choose between 2 and 5 mutations
-    num_mutations = np.random.randint(3, 15)
-
-    for _ in range(num_mutations):
-        if np.random.rand() < mutation_rate:
-            # Random tile swap
+    if np.random.rand() < mutation_rate:
+        # More swaps if fitness is low
+        num_swaps = 2 if fitness_score < FITNESS_THRESHOLD else 1
+        for _ in range(num_swaps):
             idx1 = np.random.randint(0, 8, size=2)
             idx2 = np.random.randint(0, 8, size=2)
 
-            if not np.array_equal(idx1, idx2):
-                # Perform swap using a temporary variable to avoid overwriting
-                # Make a copy of the first tile
-                temp = puzzle[idx1[0], idx1[1]].copy()
-                # Assign the second tile to the first
-                puzzle[idx1[0], idx1[1]] = puzzle[idx2[0], idx2[1]]
-                # Assign the copied first tile to the second
-                puzzle[idx2[0], idx2[1]] = temp
-
-        if np.random.rand() < mutation_rate:
-            # Random tile rotation within the individual puzzle
-            idx1 = np.random.randint(0, 8, size=2)
-            rotations1 = np.random.randint(1, 4)
-            puzzle[idx1[0], idx1[1]] = rotate_tile(
-                puzzle[idx1[0], idx1[1]], rotations1)
+            # Ensure we are only swapping with valid tiles
+            valid_tile1 = random.choice(tiles)
+            valid_tile2 = random.choice(tiles)
+            puzzle[idx1[0], idx1[1]] = valid_tile1
+            puzzle[idx2[0], idx2[1]] = valid_tile2
 
     return puzzle
 
@@ -114,33 +123,42 @@ def run_genetic_algorithm(tiles):
     start_time = time.time()  # Record the start time
 
     for generation in range(GENERATIONS):
+        # Selection
         population = selection(population)
 
+        # Crossover phase
         new_population = []
         while len(new_population) < POPULATION_SIZE:
             parent1, parent2 = random.sample(population, 2)
-            child1, child2 = parent1.copy(), parent2.copy()
 
-            # Mutate the children in place
+            # Switch to uniform crossover based on fitness score
+            if fitness(parent1)[0] < FITNESS_THRESHOLD and fitness(parent2)[0] < FITNESS_THRESHOLD:
+                child1, child2 = two_point_crossover(parent1, parent2)
+            else:
+                child1, child2 = uniform_crossover(parent1, parent2)
+
+            # Mutate and append to new population
             child1 = mutate(child1, tiles, fitness(child1)[0])
             child2 = mutate(child2, tiles, fitness(child2)[0])
-
             new_population.extend([child1, child2])
 
         population = new_population[:POPULATION_SIZE]
 
+        # Track best solution
         for puzzle in population:
             score = fitness(puzzle)[0]
             if score > best_fitness:
                 best_fitness = score
                 best_solution = puzzle
 
+        # Log the current best fitness score
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"[{timestamp}] Generation {generation + 1}/{GENERATIONS}: Best Fitness (score) = {best_fitness}")
 
     end_time = time.time()  # Record the end time
     total_run_time = end_time - start_time
 
+    # Log total run time
     print(
         f"Total Run Time: {total_run_time:.2f} seconds | Mismatches: {112-best_fitness}")
 
