@@ -4,18 +4,23 @@ import pandas as pd
 import time
 from datetime import datetime
 from deap import tools, base, creator
+from scipy.spatial.distance import hamming
+import uuid
 
 # Constants
 POPULATION_SIZE = 1000
 GENERATIONS = 100
-MAX_MUTATION_RATE = 0.95
+MAX_MUTATION_RATE = 0.73
 MIN_MUTATION_RATE = 0.15
-FITNESS_THRESHOLD = 50  # The fitness score at which to switch crossover strategies
-ELITE_PERCENTAGE = 0.15  # Percentage of elite individuals to carry over
-BASE_RANDOM_PERCENTAGE = 0.10  # Base percentage of random individuals to introduce
+FITNESS_THRESHOLD = 51  # The fitness score at which to switch crossover strategies
+ELITE_PERCENTAGE = 0.125  # Percentage of elite individuals to carry over
+BASE_RANDOM_PERCENTAGE = 0.125  # Base percentage of random individuals to introduce
 # Number of generations for each stagnation level
 STAGNATION_LIMITS = [2, 5, 8]
-RANDOM_INCREMENT = [0.05, 0.2, 0.25]  # Increment for each stagnation level
+RANDOM_INCREMENT = [0.05, 0.175, 0.25]  # Increment for each stagnation level
+# Minimum Hamming distance (set as a ratio of differing positions)
+MIN_HAMMING_DISTANCE = 185
+MAX_HAMMING_DISTANCE = 215
 
 # DEAP setup
 creator.create("FitnessMax", base.Fitness, weights=(1.0,))
@@ -33,17 +38,51 @@ def read_input(file_path):
             tiles.append(tile_digits)
     return np.array(tiles).reshape(64, 4)
 
-# Initialize the population with unique arrangements of tiles
+
+def generate_random_hash():
+    """Generate a random hash for the individual using UUID."""
+    return str(uuid.uuid4())
+
+
+def hamming_distance(ind1, ind2):
+    """Calculate the Hamming distance between two individuals using SciPy."""
+    flat_ind1 = ind1.flatten()
+    flat_ind2 = ind2.flatten()
+    # scipy's hamming returns the proportion of differing elements
+    # Convert to absolute distance
+    var = hamming(flat_ind1, flat_ind2) * len(flat_ind1)
+    # print(var)
+    return var
 
 
 def initialize_population(tiles):
     population = []
-    for _ in range(POPULATION_SIZE):
-        arrangement = np.random.permutation(tiles)  # Faster random shuffle
-        grid_arrangement = arrangement.reshape(8, 8, 4)
-        population.append(creator.Individual(grid_arrangement))
-    return population
+    hamming_distances_map = {}  # Dictionary to store hashes of individuals
 
+    start_time = time.time()  # Record the start time
+
+    while len(population) < POPULATION_SIZE:
+        arrangement = np.random.permutation(tiles)
+        grid_arrangement = arrangement.reshape(8, 8, 4)
+        new_individual = creator.Individual(grid_arrangement)
+
+        new_hash = generate_random_hash()
+
+        # Check if the new individual has a sufficient Hamming distance from the existing population
+        if new_hash not in hamming_distances_map:
+            # Only check Hamming distances against individuals already in the population
+            if all(hamming_distance(new_individual, ind) > MIN_HAMMING_DISTANCE or hamming_distance(new_individual, ind) < MAX_HAMMING_DISTANCE for ind in population):
+                population.append(new_individual)
+                # Store the hash in the map
+                hamming_distances_map[new_hash] = new_individual
+    end_time = time.time()  # Record the end time
+    total_run_time = end_time - start_time
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # [print(value) for value in hamming_distances_map.values()]
+
+    print(f"[{timestamp}] Finished Initializing Population in {total_run_time:.2f} seconds")
+    return population
 # Counts correct edges since max # good edges is 112
 
 
