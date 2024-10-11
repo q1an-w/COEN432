@@ -9,7 +9,8 @@ import uuid
 
 # Constants
 POPULATION_SIZE = 1000
-GENERATIONS = 100
+GENERATIONS = 10000
+
 MAX_MUTATION_RATE = 0.73
 MIN_MUTATION_RATE = 0.15
 FITNESS_THRESHOLD = 51  # The fitness score at which to switch crossover strategies
