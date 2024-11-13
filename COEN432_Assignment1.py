@@ -40,8 +40,9 @@ BASE_RANDOM_PERCENTAGE = 0.125
 
 
 # Number of generations for each stagnation level
-STAGNATION_LIMITS = [2, 5, 8]
-RANDOM_INCREMENT = [0.05, 0.175, 0.25]  # Increment for each stagnation level
+STAGNATION_LIMITS = [2, 5, 8, 100]
+# Increment for each stagnation level
+RANDOM_INCREMENT = [0.05, 0.175, 0.25, 0.625]
 
 # Define a maximum cap for the mutation rate based on stagnation
 MAX_MUTATION_RATE_BONUS = 0.4  # Maximum additional bonus to the mutation rate
@@ -241,6 +242,7 @@ def run_genetic_algorithm(tiles):
     current_random_percentage = BASE_RANDOM_PERCENTAGE
 
     for generation in range(GENERATIONS):
+        # while generation < GENERATIONS:
         # SELECTION
         population = selection(population)
 
@@ -292,18 +294,21 @@ def run_genetic_algorithm(tiles):
         elif stagnation_counter >= STAGNATION_LIMITS[1] and stagnation_counter < STAGNATION_LIMITS[2]:
             current_random_percentage = BASE_RANDOM_PERCENTAGE + \
                 RANDOM_INCREMENT[1]
-        elif stagnation_counter >= STAGNATION_LIMITS[2]:
+        elif stagnation_counter >= STAGNATION_LIMITS[2] and stagnation_counter < STAGNATION_LIMITS[3]:
             current_random_percentage = BASE_RANDOM_PERCENTAGE + \
                 RANDOM_INCREMENT[2]
+        elif stagnation_counter >= STAGNATION_LIMITS[3]:
+            current_random_percentage = BASE_RANDOM_PERCENTAGE + \
+                RANDOM_INCREMENT[3]
 
         # Log the current best fitness score
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"[{timestamp}] Generation {generation + 1}/{GENERATIONS}: Best Fitness (score) = {best_fitness} | Stagnation : {stagnation_counter}")
+        generation += 1
+        end_time = time.time()  # Record the end time
+        total_run_time = end_time - start_time
 
-    end_time = time.time()  # Record the end time
-    total_run_time = end_time - start_time
-
-    # Log total run time
+        # Log total run time
     print(
         f"Total Run Time: {total_run_time:.2f} seconds | Mismatches: {112 - best_fitness}")
 
@@ -327,29 +332,29 @@ if __name__ == "__main__":
     input_file = "Ass1Input.txt"
     output_file = "Ass1Output.txt"
 
-    # Input validation for population amount
-    while True:
-        try:
-            POPULATION_SIZE = int(
-                input("Enter the population size (between 1 and 1000): "))
-            if 1 <= POPULATION_SIZE <= 1000:
-                break
-            else:
-                print("Please enter a population size between 1 and 1000.")
-        except ValueError:
-            print("Invalid input. Please enter a valid integer.")
+    # # Input validation for population amount
+    # while True:
+    #     try:
+    #         POPULATION_SIZE = int(
+    #             input("Enter the population size (between 1 and 1000): "))
+    #         if 1 <= POPULATION_SIZE <= 1000:
+    #             break
+    #         else:
+    #             print("Please enter a population size between 1 and 1000.")
+    #     except ValueError:
+    #         print("Invalid input. Please enter a valid integer.")
 
-    # Input validation for number of generations
-    while True:
-        try:
-            GENERATIONS = int(
-                input("Enter the number of generations (between 1 and 100): "))
-            if 1 <= GENERATIONS <= 100:
-                break
-            else:
-                print("Please enter a number of generations between 1 and 100.")
-        except ValueError:
-            print("Invalid input. Please enter a valid integer.")
+    # # Input validation for number of generations
+    # while True:
+    #     try:
+    #         GENERATIONS = int(
+    #             input("Enter the number of generations (between 1 and 100): "))
+    #         if 1 <= GENERATIONS <= 100:
+    #             break
+    #         else:
+    #             print("Please enter a number of generations between 1 and 100.")
+    #     except ValueError:
+    #         print("Invalid input. Please enter a valid integer.")
 
     tiles = read_input(input_file)
     best_solution = run_genetic_algorithm(tiles)

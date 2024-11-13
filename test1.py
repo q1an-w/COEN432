@@ -1,305 +1,88 @@
-import random
-import numpy as np
 import pandas as pd
-import time
-from datetime import datetime
-from deap import tools, base, creator
-from scipy.spatial.distance import hamming
-import uuid
+import numpy as np
 
-# Constants
-POPULATION_SIZE = 1000
-GENERATIONS = 10000
-
-MAX_MUTATION_RATE = 0.73
-MIN_MUTATION_RATE = 0.15
-FITNESS_THRESHOLD = 51  # The fitness score at which to switch crossover strategies
-ELITE_PERCENTAGE = 0.125  # Percentage of elite individuals to carry over
-BASE_RANDOM_PERCENTAGE = 0.125  # Base percentage of random individuals to introduce
-# Number of generations for each stagnation level
-STAGNATION_LIMITS = [2, 5, 8]
-RANDOM_INCREMENT = [0.05, 0.175, 0.25]  # Increment for each stagnation level
-# Minimum Hamming distance (set as a ratio of differing positions)
-MIN_HAMMING_DISTANCE = 185
-MAX_HAMMING_DISTANCE = 215
-
-# DEAP setup
-creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-creator.create("Individual", np.ndarray, fitness=creator.FitnessMax)
-
-# Optimized input file reader using pandas
+# Function to read tiles from the input file
 
 
-def read_input(file_path):
-    df = pd.read_csv(file_path, sep='\s+', header=None)
+def read_tiles_from_file(file_path, skip_first_line=False):
+    # Read the file while skipping the first line if specified
+    df = pd.read_csv(file_path, sep='\s+', header=None,
+                     skiprows=1 if skip_first_line else 0)
     tiles = []
     for row in df.values:
         for tile in row:
             tile_digits = [int(digit) for digit in f"{tile:04d}"]
             tiles.append(tile_digits)
-    return np.array(tiles).reshape(64, 4)
+    return np.array(tiles).reshape(-1, 4)
+
+# Function to rotate a tile
 
 
-def generate_random_hash():
-    """Generate a random hash for the individual using UUID."""
-    return str(uuid.uuid4())
+def rotate_tile(tile):
+    return [
+        tile[3],  # First becomes the last
+        tile[0],  # Second becomes the first
+        tile[1],  # Third becomes the second
+        tile[2]   # Fourth becomes the third
+    ]
+
+# Function to generate all rotations of a tile
 
 
-def hamming_distance(ind1, ind2):
-    """Calculate the Hamming distance between two individuals using SciPy."""
-    flat_ind1 = ind1.flatten()
-    flat_ind2 = ind2.flatten()
-    # scipy's hamming returns the proportion of differing elements
-    # Convert to absolute distance
-    var = hamming(flat_ind1, flat_ind2) * len(flat_ind1)
-    # print(var)
-    return var
+def generate_rotations(tile):
+    rotations = [tile]
+    for _ in range(3):
+        tile = rotate_tile(tile)
+        rotations.append(tile)
+    return rotations
+
+# Function to count the number of different tiles (considering rotations)
 
 
-def initialize_population(tiles):
-    population = []
-    hamming_distances_map = {}  # Dictionary to store hashes of individuals
+def count_different_tiles(input_tiles, output_tiles):
+    # For input tiles, generate all rotations and store them in a list as tuples
+    input_rotations = []
+    for tile in input_tiles:
+        input_rotations.extend([tuple(rotation)
+                               for rotation in generate_rotations(tile)])
 
-    start_time = time.time()  # Record the start time
+    # For output tiles, generate all rotations and store them in a list as tuples
+    output_rotations = []
+    for tile in output_tiles:
+        output_rotations.extend([tuple(rotation)
+                                for rotation in generate_rotations(tile)])
 
-    while len(population) < POPULATION_SIZE:
-        arrangement = np.random.permutation(tiles)
-        grid_arrangement = arrangement.reshape(8, 8, 4)
-        new_individual = creator.Individual(grid_arrangement)
+    # Initialize counters for unmatched tiles
+    different_tiles_count = 0
 
-        new_hash = generate_random_hash()
+    # Create a copy of the input_rotations list to track matched tiles
+    unmatched_input = input_rotations.copy()
 
-        # Check if the new individual has a sufficient Hamming distance from the existing population
-        if new_hash not in hamming_distances_map:
-            # Only check Hamming distances against individuals already in the population
-            if all(hamming_distance(new_individual, ind) > MIN_HAMMING_DISTANCE or hamming_distance(new_individual, ind) < MAX_HAMMING_DISTANCE for ind in population):
-                population.append(new_individual)
-                # Store the hash in the map
-                hamming_distances_map[new_hash] = new_individual
-    end_time = time.time()  # Record the end time
-    total_run_time = end_time - start_time
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    # [print(value) for value in hamming_distances_map.values()]
-
-    print(f"[{timestamp}] Finished Initializing Population in {total_run_time:.2f} seconds")
-    return population
-# Counts correct edges since max # good edges is 112
-
-
-def fitness(individual):
-    puzzle = np.array(individual).reshape(8, 8, 4)
-    right_edges = puzzle[:, :-1, 1] != puzzle[:, 1:, 3]
-    bottom_edges = puzzle[:-1, :, 2] != puzzle[1:, :, 0]
-    total_mismatches = np.sum(right_edges) + np.sum(bottom_edges)
-    fitness_score = 112 - total_mismatches
-    return fitness_score,
-
-# Select the best candidates using numpy for faster
-
-
-def selection(population):
-    fitness_scores = np.array([fitness(puzzle)[0] for puzzle in population])
-    best_indices = np.argsort(
-        fitness_scores)[-POPULATION_SIZE // 2:]  # Select top 50%
-    return [population[i] for i in best_indices]
-
-# Generate a random individual
-
-
-def generate_random_individual(tiles):
-    arrangement = np.random.permutation(tiles)
-    grid_arrangement = arrangement.reshape(8, 8, 4)
-    return creator.Individual(grid_arrangement)
-
-# Two-point crossover ensuring valid tiles
-
-
-def two_point_crossover(parent1, parent2):
-    crossover_point1 = random.randint(1, 6)
-    crossover_point2 = random.randint(crossover_point1 + 1, 7)
-
-    # Create child arrays with swapped sections
-    child1 = np.vstack(
-        (parent1[:crossover_point1], parent2[crossover_point1:crossover_point2], parent1[crossover_point2:]))
-    child2 = np.vstack(
-        (parent2[:crossover_point1], parent1[crossover_point1:crossover_point2], parent2[crossover_point2:]))
-
-    return creator.Individual(child1), creator.Individual(child2)
-
-# Uniform crossover ensuring valid tiles
-
-
-def uniform_crossover(parent1, parent2):
-    mask = np.random.rand(8, 8) > 0.5
-    child1 = np.where(mask[:, :, None], parent1, parent2)
-    child2 = np.where(mask[:, :, None], parent2, parent1)
-
-    return creator.Individual(child1), creator.Individual(child2)
-
-# Rotate a tile
-
-
-def rotate_tile(tile, rotations):
-    rotation_mapping = {
-        0: tile,                          # No rotation
-        1: [tile[3], tile[0], tile[1], tile[2]],  # 1 clockwise rotation
-        2: [tile[2], tile[3], tile[0], tile[1]],  # 2 clockwise rotations
-        3: [tile[1], tile[2], tile[3], tile[0]],  # 3 clockwise rotations
-    }
-    return rotation_mapping[rotations]
-
-# Swap tiles
-
-
-def swap_tiles(puzzle, idx1, idx2):
-    new_puzzle = puzzle.copy()
-    new_puzzle[idx1], new_puzzle[idx2] = new_puzzle[idx2].copy(
-    ), new_puzzle[idx1].copy()
-    return new_puzzle
-
-# Mutate a candidate solution ensuring valid tiles
-
-
-# Define a maximum cap for the mutation rate based on stagnation
-MAX_MUTATION_RATE_BONUS = 0.4  # Maximum additional bonus to the mutation rate
-STAGNATION_BONUS_SCALING = 0.05  # Scaling factor for the stagnation counter bonus
-
-
-def mutate(puzzle, stagnation_counter, fitness_score):
-    # Calculate the base mutation rate
-    if fitness_score < 112:  # Only scale if fitness is less than the max
-        mutation_rate = MAX_MUTATION_RATE * (1 - (fitness_score / 112))
-        mutation_rate = max(mutation_rate, MIN_MUTATION_RATE)
-    else:
-        mutation_rate = MIN_MUTATION_RATE  # Apply minimum rate if fitness is maximized
-
-    # Calculate the mutation bonus based on stagnation counter
-    mutation_bonus = min(stagnation_counter *
-                         STAGNATION_BONUS_SCALING, MAX_MUTATION_RATE_BONUS)
-
-    # Adjust the mutation rate by adding the mutation bonus
-    mutation_rate += mutation_bonus
-    # Cap the mutation rate
-    mutation_rate = min(mutation_rate, MAX_MUTATION_RATE)
-
-    if np.random.rand() < mutation_rate:
-        num_mutations = 3 if fitness_score < FITNESS_THRESHOLD else 1
-        for _ in range(num_mutations):
-            action = random.choice(['swap', 'rotate'])
-            idx1 = np.random.randint(0, 8, size=2)
-
-            if action == 'swap':
-                idx2 = np.random.randint(0, 8, size=2)
-                puzzle = swap_tiles(puzzle, tuple(idx1), tuple(idx2))
-            elif action == 'rotate':
-                rotations = np.random.randint(1, 4)  # Rotate 1 to 3 times
-                tile_to_rotate = puzzle[tuple(idx1)].copy()
-                rotated_tile = rotate_tile(tile_to_rotate, rotations)
-                puzzle[tuple(idx1)] = rotated_tile
-
-    return puzzle
-
-
-# Run the genetic algorithm
-
-
-def run_genetic_algorithm(tiles):
-    population = initialize_population(tiles)
-    best_solution = None
-    best_fitness = -1
-    stagnation_counter = 0  # Counter for stagnation
-    # Start with base random percentage
-    current_random_percentage = BASE_RANDOM_PERCENTAGE
-
-    start_time = time.time()  # Record the start time
-
-    for generation in range(GENERATIONS):
-        # Selection
-        population = selection(population)
-
-        # Preserve elite individuals
-        elite_count = int(ELITE_PERCENTAGE * POPULATION_SIZE)
-        elites = population[-elite_count:]  # Keep top elite_count individuals
-
-        # Generate random individuals based on current random percentage
-        random_count = int(current_random_percentage * POPULATION_SIZE)
-        random_individuals = [generate_random_individual(
-            tiles) for _ in range(random_count)]
-
-        # Crossover phase
-        # Start new population with elites and randoms
-        new_population = list(elites) + random_individuals
-        while len(new_population) < POPULATION_SIZE:
-            parent1, parent2 = random.sample(population, 2)
-
-            # Switch to uniform crossover based on fitness score
-            if fitness(parent1)[0] < FITNESS_THRESHOLD and fitness(parent2)[0] < FITNESS_THRESHOLD:
-                child1, child2 = two_point_crossover(parent1, parent2)
-            else:
-                child1, child2 = uniform_crossover(parent1, parent2)
-
-            # Mutate and append to new population
-            child1 = mutate(child1, stagnation_counter, fitness(child1)[0])
-            child2 = mutate(child2, stagnation_counter, fitness(child2)[0])
-            new_population.extend([child1, child2])
-
-        population = new_population[:POPULATION_SIZE]
-
-        # Track best solution
-        prev_best_score = best_fitness
-        for puzzle in population:
-            score = fitness(puzzle)[0]
-            if score > best_fitness:
-                best_fitness = score
-                best_solution = puzzle
-                prev_best_score = 0  # Reset stagnation counter on improvement
-
-        if best_fitness > prev_best_score:
-            stagnation_counter = 0
+    # Compare each output tile's rotations against the input tile rotations
+    for output_tile in output_rotations:
+        if output_tile in unmatched_input:
+            # Remove matched tile from input list
+            unmatched_input.remove(output_tile)
         else:
-            stagnation_counter += 1
-        # Adjust random individuals based on stagnation
-        if stagnation_counter >= STAGNATION_LIMITS[0] and stagnation_counter < STAGNATION_LIMITS[1]:
-            current_random_percentage = BASE_RANDOM_PERCENTAGE + \
-                RANDOM_INCREMENT[0]
-        elif stagnation_counter >= STAGNATION_LIMITS[1] and stagnation_counter < STAGNATION_LIMITS[2]:
-            current_random_percentage = BASE_RANDOM_PERCENTAGE + \
-                RANDOM_INCREMENT[1]
-        elif stagnation_counter >= STAGNATION_LIMITS[2]:
-            current_random_percentage = BASE_RANDOM_PERCENTAGE + \
-                RANDOM_INCREMENT[2]
+            print(output_tile)
+            different_tiles_count += 1  # Count the tile as different
 
-        # Log the current best fitness score
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(f"[{timestamp}] Generation {generation + 1}/{GENERATIONS}: Best Fitness (score) = {best_fitness} | Stagnation : {stagnation_counter}")
+    return different_tiles_count
 
-    end_time = time.time()  # Record the end time
-    total_run_time = end_time - start_time
-
-    # Log total run time
-    print(
-        f"Total Run Time: {total_run_time:.2f} seconds | Mismatches: {112 - best_fitness}")
-
-    return best_solution
+# Main function to execute the count
 
 
-# Write the output to a file
-team_info = "Qian Yi Wang (40211303) Philip Carlsson-Coulombe (40208572)"
+def main(input_file, output_file):
+    input_tiles = read_tiles_from_file(input_file)
+    output_tiles = read_tiles_from_file(
+        output_file, skip_first_line=True)  # Skip the first line of output
+
+    different_count = count_different_tiles(input_tiles, output_tiles) / 4
+    print(f"Number of different tiles: {different_count}")
 
 
-def write_output(file_path, solution):
-    with open(file_path, 'w') as file:
-        file.write(f"{team_info}\n")
-        for row in solution:
-            line = ' '.join([''.join(map(str, tile)) for tile in row])
-            file.write(line + '\n')
-
-
-# Main execution
+# Example usage
 if __name__ == "__main__":
     input_file = "Ass1Input.txt"
-    output_file = "Ass1Output.txt"
-    tiles = read_input(input_file)
-    best_solution = run_genetic_algorithm(tiles)
-    write_output(output_file, best_solution)
+    output_file = "bestoutput.txt"
+    main(input_file, output_file)

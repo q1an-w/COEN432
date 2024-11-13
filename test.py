@@ -72,5 +72,5 @@ def main(input_file, output_file):
 # Example usage
 if __name__ == "__main__":
     input_file = "Ass1Input.txt"
-    output_file = "Ass1Output.txt"
+    output_file = "bestoutput.txt"
     main(input_file, output_file)
