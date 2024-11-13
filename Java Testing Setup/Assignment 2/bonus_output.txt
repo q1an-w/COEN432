@@ -1,0 +1,5 @@
+N=40, k-NN: Accuracy=0.80, Decision Tree: Accuracy=0.90
+N=140, k-NN: Accuracy=1.00, Decision Tree: Accuracy=0.91
+N=240, k-NN: Accuracy=0.97, Decision Tree: Accuracy=0.95
+N=340, k-NN: Accuracy=0.95, Decision Tree: Accuracy=0.92
+N=440, k-NN: Accuracy=0.95, Decision Tree: Accuracy=0.91
