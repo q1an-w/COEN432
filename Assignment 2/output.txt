@@ -1,5 +1,0 @@
-N=40, k-NN Accuracy=0.90, Precision=1.00, Recall=0.75, F1=0.86, Time=0.2272 sec
-N=140, k-NN Accuracy=1.00, Precision=1.00, Recall=1.00, F1=1.00, Time=0.0097 sec
-N=240, k-NN Accuracy=0.95, Precision=0.95, Recall=0.91, F1=0.93, Time=0.0080 sec
-N=340, k-NN Accuracy=0.95, Precision=1.00, Recall=0.88, F1=0.93, Time=0.0111 sec
-N=440, k-NN Accuracy=0.96, Precision=0.97, Recall=0.93, F1=0.95, Time=0.0118 sec

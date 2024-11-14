@@ -1,5 +1,15 @@
-N=40, k-NN: Accuracy=0.80, Decision Tree: Accuracy=0.90
-N=140, k-NN: Accuracy=1.00, Decision Tree: Accuracy=0.91
-N=240, k-NN: Accuracy=0.97, Decision Tree: Accuracy=0.95
-N=340, k-NN: Accuracy=0.95, Decision Tree: Accuracy=0.92
-N=440, k-NN: Accuracy=0.95, Decision Tree: Accuracy=0.91
+N=40 | k-NN: Accuracy=0.80, Precision=0.75, Recall=0.75, F1=0.75, ROC AUC=0.79, Time=0.0054 sec, Best Score=0.93
+N=40 | Decision Tree: Accuracy=0.90, Precision=0.80, Recall=1.00, F1=0.89, ROC AUC=0.92, Time=0.0000 sec, Best Score=0.95
+
+N=140 | k-NN: Accuracy=0.94, Precision=1.00, Recall=0.85, F1=0.92, ROC AUC=0.92, Time=0.0057 sec, Best Score=0.94
+N=140 | Decision Tree: Accuracy=0.91, Precision=0.86, Recall=0.92, F1=0.89, ROC AUC=0.92, Time=0.0000 sec, Best Score=0.92
+
+N=240 | k-NN: Accuracy=1.00, Precision=1.00, Recall=1.00, F1=1.00, ROC AUC=1.00, Time=0.0053 sec, Best Score=0.96
+N=240 | Decision Tree: Accuracy=0.98, Precision=1.00, Recall=0.95, F1=0.98, ROC AUC=0.98, Time=0.0000 sec, Best Score=0.94
+
+N=340 | k-NN: Accuracy=0.96, Precision=1.00, Recall=0.91, F1=0.95, ROC AUC=0.95, Time=0.0060 sec, Best Score=0.96
+N=340 | Decision Tree: Accuracy=0.93, Precision=0.91, Recall=0.91, F1=0.91, ROC AUC=0.92, Time=0.0000 sec, Best Score=0.94
+
+N=440 | k-NN: Accuracy=0.99, Precision=1.00, Recall=0.98, F1=0.99, ROC AUC=0.99, Time=0.0065 sec, Best Score=0.96
+N=440 | Decision Tree: Accuracy=0.96, Precision=0.97, Recall=0.93, F1=0.95, ROC AUC=0.96, Time=0.0000 sec, Best Score=0.94
+
