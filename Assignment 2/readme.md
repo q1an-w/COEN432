@@ -10,4 +10,6 @@ questions to ask TA
 
 4- Should data name be user input
 
-5- 
+5- need separate report?
+
+6- evaluation metrics need all...?
