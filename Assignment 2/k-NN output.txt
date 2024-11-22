@@ -1,1 +1,0 @@
-N=8, k-NN Accuracy=0.50, Precision=0.00, Recall=0.00, F1=0.00, Time=0.2641 sec

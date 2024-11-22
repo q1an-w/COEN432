@@ -1,19 +1,15 @@
-questions to ask TA
+# RUN COEN432_Assignment_2.py for the menu
 
 
+## Option 1: Run Base Assignment (K-NN)
+- Executes the main functionality of the Base_COEN432_Assignment_2 module.
+- This portion focuses on implementing a K-Nearest Neighbors (K-NN) model.
+- It loads and preprocesses data, splits it into training and testing sets, and evaluates the K-NN classifier.
+**The results are displayed and saved as output files.**
 
-1- for bonus, 2 more? or just 1 more? (i did knn for undergrad part, is ok if i did knn & decision tree for bonus)
-
-2- report requirements for undergrad vs grad portion
-
-3- Should N be user input?
-
-4- Should data name be user input?
-
-5- need separate report?
-
-6- evaluation metrics need all...?
-
-7- ensure reproducibility?
-
-8- submission
+## Option 2: Run Bonus Portion (K-NN & Decision Tree w/ Optimization)
+- Executes the main functionality of the Bonus_COEN432_Assignment_2 module.
+- This portion includes:
+    -- A K-Nearest Neighbors (K-NN) model.
+    -- A Decision Tree classifier with hyperparameter optimization using Grid Search.
+**Results are saved as plots and output files.**

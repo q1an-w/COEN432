@@ -1,2 +1,0 @@
-N=455 | k-NN: Accuracy=0.98, Precision=0.98, Recall=0.98, F1=0.98, ROC AUC=0.98, Time=0.0081 sec, Best Score=0.97
-N=455 | Decision Tree: Accuracy=0.93, Precision=0.93, Recall=0.88, F1=0.90, ROC AUC=0.92, Time=0.0000 sec, Best Score=0.94

@@ -1,4 +1,5 @@
-# Team: [Qian Yi Wang (40211303) --- Philip Carlsson-Coulombe (40208572)]
+# Qian Yi Wang (40211303) --- Philip Carlsson-Coulombe (40208572)
+import os
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 from data_preprocessing import load_and_preprocess_data, split_data
@@ -74,7 +75,9 @@ def main():
     results.append((N, accuracy, precision, recall, f1, test_time))
     print(f"N={N} T={N//4}, k-NN Accuracy={accuracy:.2f}, Precision={precision:.2f}, Recall={recall:.2f}, F1={f1:.2f}, Time={test_time:.4f} sec")
     
-    with open("k-NN output.txt", "w") as f:
+
+    os.makedirs("./Outputs", exist_ok=True)
+    with open("./Outputs/k-NN output.txt", "w") as f:
         for result in results:
             f.write(f"N={result[0]}, k-NN Accuracy={result[1]:.2f}, Precision={result[2]:.2f}, Recall={result[3]:.2f}, F1={result[4]:.2f}, Time={result[5]:.4f} sec\n")
 

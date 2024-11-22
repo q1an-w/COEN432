@@ -1,0 +1,2 @@
+N=440 | k-NN: Accuracy=0.99, Precision=1.00, Recall=0.98, F1=0.99, Time=0.0064 sec, Best Score=0.96
+N=440 | Decision Tree: Accuracy=0.95, Precision=0.97, Recall=0.90, F1=0.94, Time=0.0000 sec, Best Score=0.95
