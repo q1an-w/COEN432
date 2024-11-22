@@ -8,8 +8,12 @@ questions to ask TA
 
 3- Should N be user input?
 
-4- Should data name be user input
+4- Should data name be user input?
 
 5- need separate report?
 
 6- evaluation metrics need all...?
+
+7- ensure reproducibility?
+
+8- submission
