@@ -1,7 +1,9 @@
 # Qian Yi Wang (40211303) --- Philip Carlsson-Coulombe (40208572)
 import os
+import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.utils import check_random_state
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from data_preprocessing import load_and_preprocess_data, split_data
 import time
 import random
@@ -42,8 +44,13 @@ def evaluate_model(clf, X_test, y_test):
 
     return accuracy, precision, recall, f1, test_time
 
+def set_random_seeds(seed=88):
+    random.seed(seed)
+    np.random.seed(seed)
+    check_random_state(seed)
+
 def main():
-    
+    set_random_seeds()
     filename = input("Enter the path to the CSV file (e.g., 'data.csv'): ")
     try:
         X, y = load_and_preprocess_data(filename)

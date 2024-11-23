@@ -2,10 +2,12 @@
 import os
 import random
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.utils import check_random_state
 from Base_COEN432_Assignment_2 import evaluate_model
 from data_preprocessing import load_and_preprocess_data, split_data
 
@@ -52,7 +54,13 @@ def plot_validation_accuracies(results_df, param_name, title, filename):
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     plt.close()
 
+def set_random_seeds(seed=88):
+    random.seed(seed)
+    np.random.seed(seed)
+    check_random_state(seed)
+
 def main():
+    set_random_seeds()
     filename = input("Enter the path to the CSV file (e.g., 'data.csv'): ")
     try:
         X, y = load_and_preprocess_data(filename)
@@ -70,7 +78,7 @@ def main():
         print(f"Invalid input: {e}")
         return main()
 
-    random.seed(42)
+  
     X_train, X_test, y_train, y_test = split_data(X, y, N)
 
     # k-NN Model with Grid Search
@@ -81,7 +89,7 @@ def main():
 
     # Plot validation accuracies for k-NN
     plot_validation_accuracies(knn_results, 'n_neighbors', "k-NN Validation Accuracies","./Outputs/knn_validation_accuracy.png")
-    print("K-NN model done")
+    print("K-NN model plotting done & saved")
 
     # Decision Tree Model with Grid Search
     tree = DecisionTreeClassifier()
@@ -91,18 +99,17 @@ def main():
 
     # Plot validation accuracies for Decision Tree
     plot_validation_accuracies(tree_results, 'max_depth', "Decision Tree Validation Accuracies","./Outputs/decision_tree_validation_accuracy.png")
-    print("K-NN model done")
+    print("Decision tree plot done & saved")
 
     os.makedirs("./Outputs", exist_ok=True)
     output_file = "./Outputs/Optimized_KNN_And_Decision_Tree_output.txt"
     with open(output_file, "w") as f:
         f.write(f"N={N} | k-NN: Accuracy={knn_accuracy:.2f}, Precision={knn_precision:.2f}, Recall={knn_recall:.2f}, "
-                f"F1={knn_f1:.2f}, Time={knn_time:.4f} sec, Best Score={knn_best_score:.2f}\n")
+                f"F1={knn_f1:.2f}, Time={knn_time:.4f} sec, Best Score={knn_best_score:.2f}, Best n neighbours={knn_best.get_params()['n_neighbors']}\n")
         f.write(f"N={N} | Decision Tree: Accuracy={tree_accuracy:.2f}, Precision={tree_precision:.2f}, Recall={tree_recall:.2f}, "
-                f"F1={tree_f1:.2f}, Time={tree_time:.4f} sec, Best Score={tree_best_score:.2f}\n")
+                f"F1={tree_f1:.2f}, Time={tree_time:.4f} sec, Best Score={tree_best_score:.2f},Best Tree Depth={tree_best.get_params()['max_depth']}, Best Min Samples Split={tree_best.get_params()['min_samples_split']}\n")
 
     print(f"Results saved to {output_file}")
-    print(f"Grid search results saved as CSV files.")
 
 if __name__ == "__main__":
     main()

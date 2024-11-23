@@ -1,4 +1,4 @@
-# RUN COEN432_Assignment_2.py for the menu
+# RUN COEN432_Assignment_2.py for the menu (RUN BONUS PORTION)
 
 
 ## Option 1: Run Base Assignment (K-NN)
