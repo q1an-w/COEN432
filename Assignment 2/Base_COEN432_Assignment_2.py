@@ -51,7 +51,7 @@ def set_random_seeds(seed=88):
 
 def main():
     set_random_seeds()
-    filename = input("Enter the path to the CSV file (e.g., 'data.csv'): ")
+    filename = input("Enter the path to the CSV file (ex: data.csv): ")
     try:
         X, y = load_and_preprocess_data(filename)
     except Exception as e:
@@ -59,7 +59,6 @@ def main():
         return
     
     results = []
-    
     N_max = int(len(X)//(5/4))
     print(f"Choose a value for N (8 - {N_max})")
     try:

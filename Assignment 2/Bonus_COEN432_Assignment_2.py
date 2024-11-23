@@ -14,12 +14,11 @@ from data_preprocessing import load_and_preprocess_data, split_data
 def grid_search_optimization(clf, param_grid, X_train, y_train):
     """
     Performs grid search optimization for the specified classifier.
-    Tracks all validation accuracies for reporting purposes.
+    Tracks all validation accuracies for reporting purposes (check output folder)
     """
     grid_search = GridSearchCV(clf, param_grid, cv=5, scoring='accuracy', return_train_score=True)
     grid_search.fit(X_train, y_train)
 
-    # Extract validation accuracies for reporting
     results_df = pd.DataFrame(grid_search.cv_results_)
     
     return grid_search.best_estimator_, grid_search.best_score_, results_df
@@ -32,15 +31,13 @@ def plot_validation_accuracies(results_df, param_name, title, filename):
         results_df: DataFrame with grid search results.
         param_name: The parameter name to plot against validation accuracy.
         title: Title for the plot.
-        filename: Name of the file to save the plot.
+        filename: Name of the file to save the plot (check output folder) .
     """
     plt.figure(figsize=(10, 6))
 
-    # Ensure param_name exists
     if f'param_{param_name}' not in results_df.columns:
         raise ValueError(f"Parameter '{param_name}' not found in results DataFrame.")
 
-    # Group by parameter values and plot mean test scores
     grouped = results_df.groupby(f'param_{param_name}')['mean_test_score'].mean()
     plt.plot(grouped.index, grouped.values, marker='o', label=f"{param_name}")
 
@@ -50,7 +47,6 @@ def plot_validation_accuracies(results_df, param_name, title, filename):
     plt.legend(title="Parameter Values")
     plt.grid(True)
 
-    # Save the plot
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -61,7 +57,7 @@ def set_random_seeds(seed=88):
 
 def main():
     set_random_seeds()
-    filename = input("Enter the path to the CSV file (e.g., 'data.csv'): ")
+    filename = input("Enter the path to the CSV file (ex: data.csv): ")
     try:
         X, y = load_and_preprocess_data(filename)
     except Exception as e:
@@ -80,6 +76,7 @@ def main():
 
   
     X_train, X_test, y_train, y_test = split_data(X, y, N)
+    os.makedirs("./Outputs", exist_ok=True)
 
     # k-NN Model with Grid Search
     knn = KNeighborsClassifier()
@@ -101,7 +98,7 @@ def main():
     plot_validation_accuracies(tree_results, 'max_depth', "Decision Tree Validation Accuracies","./Outputs/decision_tree_validation_accuracy.png")
     print("Decision tree plot done & saved")
 
-    os.makedirs("./Outputs", exist_ok=True)
+    
     output_file = "./Outputs/Optimized_KNN_And_Decision_Tree_output.txt"
     with open(output_file, "w") as f:
         f.write(f"N={N} | k-NN: Accuracy={knn_accuracy:.2f}, Precision={knn_precision:.2f}, Recall={knn_recall:.2f}, "
@@ -109,7 +106,7 @@ def main():
         f.write(f"N={N} | Decision Tree: Accuracy={tree_accuracy:.2f}, Precision={tree_precision:.2f}, Recall={tree_recall:.2f}, "
                 f"F1={tree_f1:.2f}, Time={tree_time:.4f} sec, Best Score={tree_best_score:.2f},Best Tree Depth={tree_best.get_params()['max_depth']}, Best Min Samples Split={tree_best.get_params()['min_samples_split']}\n")
 
-    print(f"Results saved to {output_file}")
+    print(f"Results saved to {output_file} - Check Ouput Folder")
 
 if __name__ == "__main__":
     main()

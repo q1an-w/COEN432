@@ -1,3 +1,4 @@
+# Qian Yi Wang (40211303) --- Philip Carlsson-Coulombe (40208572)
 from Base_COEN432_Assignment_2 import main as base_assignment_main
 from Bonus_COEN432_Assignment_2 import main as bonus_portion_main
 
@@ -29,7 +30,7 @@ def main():
                 bonus_portion_main()
                 print("\n&&&&&&&&&&&&&&&&&&&&&&\n")
             elif choice == 3:
-                print("Exiting program. Goodbye!")
+                print("Exiting program ~~~ Byeeeee")
                 break
             else:
                 print("Invalid choice. Please select a valid option.")

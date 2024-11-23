@@ -1,4 +1,4 @@
-# Team: [Qian Yi Wang (40211303) --- Philip Carlsson-Coulombe (40208572)]
+# Qian Yi Wang (40211303) --- Philip Carlsson-Coulombe (40208572)
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
